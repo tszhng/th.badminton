@@ -16,8 +16,8 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v2.2.0";
-      const LAST_UPDATED = "2026-09-30 01:00";
+      const APP_VERSION = "v2.3.0";
+      const LAST_UPDATED = "2026-09-30 01:30";
 
       const todayStr = new Date().toISOString().split('T')[0];
       const currentMonthStr = todayStr.substring(0, 7);
@@ -48,7 +48,7 @@
       const [studentForm, setStudentForm] = useState({ name: '', phone: '', level: '初級', notes: '' });
       const [editingStudentId, setEditingStudentId] = useState(null);
 
-      // 課表資料（新增 endTime 欄位）
+      // 課表資料
       const [schedule, setSchedule] = useState(() => {
         const saved = localStorage.getItem('th_badminton_schedule');
         return saved ? JSON.parse(saved) : [
@@ -95,7 +95,7 @@
 
       const [courseTypeForm, setCourseTypeForm] = useState({ name: '', maxCapacity: 4, duration: '2小時', defaultCoachFee: '', defaultCourtFee: '' });
 
-      // 排課表單（包含開始與結束時間，已移除加人欄位）
+      // 排課表單
       const [lessonForm, setLessonForm] = useState({
         courseTypeId: '1',
         courseName: '1人私教',
@@ -178,7 +178,7 @@
         }
       };
 
-      // 保存排課（改期/新建課堂不需加人選項，保留原先學員名單）
+      // 保存排課
       const handleSaveLesson = (e) => {
         e.preventDefault();
 
@@ -206,7 +206,7 @@
             startTime: lessonForm.startTime,
             endTime: lessonForm.endTime,
             court: lessonForm.court || '未定場地',
-            enrolledStudents: [] // 初始為空，後續雙擊卡片自由加人
+            enrolledStudents: []
           }]);
         }
       };
@@ -258,8 +258,8 @@
 
       const addToAppleCalendar = (item) => {
         const dateStr = item.date.replace(/-/g, '');
-        const startT = item.startTime.replace(':', '') + '00';
-        const endT = item.endTime ? item.endTime.replace(':', '') + '00' : startT;
+        const startT = (item.startTime || '00:00').replace(':', '') + '00';
+        const endT = (item.endTime || item.startTime || '00:00').replace(':', '') + '00';
         
         const startDT = `${dateStr}T${startT}`;
         const endDT = `${dateStr}T${endT}`;
@@ -363,7 +363,7 @@
         reader.readAsText(file);
       };
 
-      const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '14px' };
+      const inputStyle = { width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '13px' };
       const cardStyle = { backgroundColor: '#fff', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
       const weekLabels = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -440,17 +440,16 @@
                     💡 應收總學費：HK$ {(Number(lessonForm.coachFee) || 0) + (Number(lessonForm.courtFee) || 0)}
                   </div>
 
-                  {/* 日期、開始時間與結束時間 */}
-                  <div>
-                    <label style={{ fontSize: '11px', color: '#666' }}>日期</label>
-                    <input type="date" value={lessonForm.date} onChange={e => {
-                      setLessonForm({...lessonForm, date: e.target.value});
-                      setSelectedDate(e.target.value);
-                      setSelectedMonth(e.target.value.substring(0, 7));
-                    }} required style={inputStyle} />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  {/* 緊湊橫排：日期、開始時間、結束時間 */}
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '11px', color: '#666' }}>日期</label>
+                      <input type="date" value={lessonForm.date} onChange={e => {
+                        setLessonForm({...lessonForm, date: e.target.value});
+                        setSelectedDate(e.target.value);
+                        setSelectedMonth(e.target.value.substring(0, 7));
+                      }} required style={inputStyle} />
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '11px', color: '#666' }}>開始時間</label>
                       <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={inputStyle} />
@@ -551,8 +550,9 @@
                         <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#2b580c' }}>總學費: HK$ {totalFee}</span>
                       </div>
 
+                      {/* 課堂時間完整顯示開始與結束時間 */}
                       <div style={{ fontSize: '12px', color: '#555', margin: '6px 0' }}>
-                        📅 {item.date} {item.startTime}{item.endTime ? ` - ${item.endTime}` : ''} | 📍 {item.court}
+                        📅 {item.date} {item.startTime || item.time}{item.endTime ? ` - ${item.endTime}` : ''} | 📍 {item.court}
                         <br />
                         💰 課堂費: HK${item.coachFee} | 🏟️ 場地費: HK${item.courtFee}
                       </div>
@@ -637,7 +637,7 @@
 
                   return (
                     <div key={item.id} style={{ ...cardStyle, borderLeft: '4px solid #5b8bf7' }}>
-                      <div style={{ fontWeight: 'bold', fontSize: '14px' }}>🏸 {item.courseName} ({item.date} {item.startTime})</div>
+                      <div style={{ fontWeight: 'bold', fontSize: '14px' }}>🏸 {item.courseName} ({item.date} {item.startTime || item.time})</div>
                       <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
                         課堂費: HK${item.coachFee} + 場地費: HK${item.courtFee} = <strong style={{ color: '#2b580c' }}>總金額: HK${totalFee}</strong>
                       </div>
@@ -746,7 +746,7 @@
                           defaultCoachFee: c.defaultCoachFee,
                           defaultCourtFee: c.defaultCourtFee
                         });
-                      }} style={{ padding: '4px 8px', backgroundColor: '#e0e0e0', color: '#333', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>✏️ 編輯</button>
+                      }} style={{ padding: '4px 8px', backgroundColor: '#e0e0e0', color: '#333', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>✏️️ 編輯</button>
                       <button onClick={() => setCourseTypes(courseTypes.filter(ct => ct.id !== c.id))} style={{ padding: '4px 8px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>刪除</button>
                     </div>
                   </div>
@@ -812,7 +812,7 @@
                 </div>
 
                 <div style={{ fontSize: '13px', color: '#444', lineHeight: '1.6', marginBottom: '12px' }}>
-                  <div>📅 <strong>時間：</strong>{selectedLessonModal.date} {selectedLessonModal.startTime}{selectedLessonModal.endTime ? ` - ${selectedLessonModal.endTime}` : ''}</div>
+                  <div>📅 <strong>時間：</strong>{selectedLessonModal.date} {selectedLessonModal.startTime || selectedLessonModal.time}{selectedLessonModal.endTime ? ` - ${selectedLessonModal.endTime}` : ''}</div>
                   <div>📍 <strong>地點：</strong>{selectedLessonModal.court}</div>
                   <div>💰 <strong>課堂費：</strong>HK${selectedLessonModal.coachFee}</div>
                   <div>🏟️ <strong>場地費：</strong>HK${selectedLessonModal.courtFee}</div>
@@ -901,14 +901,14 @@
                         coachFee: selectedLessonModal.coachFee,
                         courtFee: selectedLessonModal.courtFee,
                         date: selectedLessonModal.date,
-                        startTime: selectedLessonModal.startTime,
-                        endTime: selectedLessonModal.endTime || '',
+                        startTime: selectedLessonModal.startTime || selectedLessonModal.time || '19:00',
+                        endTime: selectedLessonModal.endTime || '21:00',
                         court: selectedLessonModal.court
                       });
                       setSelectedLessonModal(null);
                     }} 
                     style={{ padding: '8px', backgroundColor: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
-                    ✏️️ 修改 / 改期課堂資料
+                    ✏️ 修改 / 改期課堂資料
                   </button>
                 </div>
 
