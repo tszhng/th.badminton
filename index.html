@@ -679,9 +679,10 @@
                     <input placeholder="電話" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, flex: 1 }} />
                     <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={{ ...inputStyle, flex: 1 }}>
                       <option value="新手">新手</option>
+                      <option value="近初">近初</option>
                       <option value="初級">初級</option>
+                      <option value="初中">初中</option>
                       <option value="中級">中級</option>
-                      <option value="高級">高級</option>
                     </select>
                   </div>
 
