@@ -17,7 +17,7 @@
 
     function BadmintonCoachApp() {
       // 系統版本號管理
-      const APP_VERSION = "v1.3.1";
+      const APP_VERSION = "v1.3.2";
 
       const todayStr = new Date().toISOString().split('T')[0];
       const currentMonthStr = todayStr.substring(0, 7);
@@ -235,6 +235,29 @@
       const handleDeleteCourseType = (id) => {
         if (courseTypes.length <= 1) { alert('請至少保留一種課程類型！'); return; }
         setCourseTypes(courseTypes.filter(c => c.id !== id));
+      };
+
+      // 匯出/備份資料功能
+      const exportBackupData = () => {
+        const backupData = {
+          courseTypes,
+          students,
+          schedule,
+          exportDate: new Date().toLocaleString()
+        };
+        const blob = new Blob([JSON.stringify(backupData, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `th_badminton_backup_${todayStr}.json`;
+        a.click();
+      };
+
+      // 強制重載頁面功能
+      const forceReloadApp = () => {
+        if (confirm('這將會無視頁面快取並重新載入最新版本（你的學員與課表資料會完好保存），確定要更新嗎？')) {
+          window.location.reload(true);
+        }
       };
 
       const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '14px' };
@@ -509,8 +532,19 @@
                 </div>
               ))}
 
-              {/* 設定頁最下方的版本號提示 */}
-              <div style={{ textAlign: 'center', marginTop: '25px', color: '#888', fontSize: '12px' }}>
+              <div style={{ ...cardStyle, marginTop: '20px' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>🛠️ 系統維護與更新</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <button onClick={forceReloadApp} style={{ padding: '10px', backgroundColor: '#5b8bf7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>
+                    🔄 強制更新至最新版本 (清除快取)
+                  </button>
+                  <button onClick={exportBackupData} style={{ padding: '10px', backgroundColor: '#6c757d', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>
+                    📥 備份學員與課表資料 (.json)
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ textAlign: 'center', marginTop: '20px', color: '#888', fontSize: '12px' }}>
                 📌 當前版本：{APP_VERSION}
               </div>
             </div>
@@ -532,7 +566,6 @@
             </div>
           )}
 
-          {/* 底部選單修正 Safe Area 與屬性拼寫 */}
           <nav style={{ 
             position: 'fixed', 
             bottom: 0, 
