@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>TH.badminton</title>
+  <!-- 載入 React 與 Babel CDN -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -30,12 +31,13 @@
       const [students, setStudents] = useState(() => {
         const saved = localStorage.getItem('th_badminton_students');
         return saved ? JSON.parse(saved) : [
-          { id: 1, name: '張小明', phone: '91234567', level: '初級', notes: '習慣右手，想練高遠球' },
-          { id: 2, name: '李阿華', phone: '98765432', level: '中級', notes: '主力練雙打平抽' }
+          { id: 1, name: '張小明', phone: '91234567', level: '初級', preferredDay: '星期一', preferredTime: '19:00 - 21:00', notes: '習慣右手，想練高遠球' },
+          { id: 2, name: '李阿華', phone: '98765432', level: '中級', preferredDay: '星期六', preferredTime: '10:00 - 12:00', notes: '主力練雙打平抽' }
         ];
       });
       const [searchQuery, setSearchQuery] = useState('');
-      const [newStudent, setNewStudent] = useState({ name: '', phone: '', level: '初級', notes: '' });
+      const [newStudent, setNewStudent] = useState({ name: '', phone: '', level: '初級', preferredDay: '星期一', preferredTime: '', notes: '' });
+      const [editingStudentId, setEditingStudentId] = useState(null);
 
       const [schedule, setSchedule] = useState(() => {
         const saved = localStorage.getItem('th_badminton_schedule');
@@ -113,7 +115,7 @@
       const paidRevenue = monthlySchedule.filter(item => item.isPaid).reduce((acc, item) => acc + item.price, 0);
       const unpaidRevenue = totalRevenue - paidRevenue;
 
-      const filteredStudents = students.filter(s => s.name.includes(searchQuery) || s.phone.includes(searchQuery));
+      const filteredStudents = students.filter(s => s.name.includes(searchQuery) || (s.phone && s.phone.includes(searchQuery)));
 
       const openWhatsApp = (phone, studentName, lesson) => {
         if (!phone) { alert('該學員尚未填寫電話號碼！'); return; }
@@ -187,6 +189,37 @@
         setActiveTab('schedule');
         const type = courseTypes.find(c => c.name === item.courseName) || courseTypes[0];
         setLessonForm({ studentName: item.studentName, courseTypeId: type ? type.id : '', price: item.price, date: item.date, time: item.time, court: item.court });
+      };
+
+      const handleSaveStudent = (e) => {
+        e.preventDefault();
+        if (!newStudent.name) return;
+
+        if (editingStudentId) {
+          setStudents(students.map(s => s.id === editingStudentId ? { ...newStudent, id: editingStudentId } : s));
+          setEditingStudentId(null);
+        } else {
+          setStudents([...students, { ...newStudent, id: Date.now() }]);
+        }
+        setNewStudent({ name: '', phone: '', level: '初級', preferredDay: '星期一', preferredTime: '', notes: '' });
+      };
+
+      const handleEditStudent = (student) => {
+        setEditingStudentId(student.id);
+        setNewStudent({
+          name: student.name || '',
+          phone: student.phone || '',
+          level: student.level || '初級',
+          preferredDay: student.preferredDay || '星期一',
+          preferredTime: student.preferredTime || '',
+          notes: student.notes || ''
+        });
+      };
+
+      const handleDeleteStudent = (id) => {
+        if (confirm('確定要刪除這位學員嗎？')) {
+          setStudents(students.filter(s => s.id !== id));
+        }
       };
 
       const handleAddCourseType = (e) => {
@@ -371,22 +404,58 @@
           {activeTab === 'students' && (
             <div>
               <input placeholder="🔍 搜尋學員姓名或電話..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ ...inputStyle, marginBottom: '12px' }} />
-              <div style={cardStyle}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>➕ 新增學員</h3>
-                <form onSubmit={e => { e.preventDefault(); if (!newStudent.name) return; setStudents([...students, { ...newStudent, id: Date.now() }]); setNewStudent({ name: '', phone: '', level: '初級', notes: '' }); }} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              
+              <div style={{ ...cardStyle, border: editingStudentId ? '2px solid #e6c260' : '1px solid #eee' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>{editingStudentId ? '✏️ 修改學員資料' : '➕ 新增學員'}</h3>
+                <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <input placeholder="姓名" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} required style={inputStyle} />
                   <input placeholder="電話" value={newStudent.phone} onChange={e => setNewStudent({...newStudent, phone: e.target.value})} style={inputStyle} />
+                  
+                  {/* 志願時間欄位 */}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select value={newStudent.preferredDay} onChange={e => setNewStudent({...newStudent, preferredDay: e.target.value})} style={{ ...inputStyle, flex: 1 }}>
+                      <option value="星期一">星期一</option>
+                      <option value="星期二">星期二</option>
+                      <option value="星期三">星期三</option>
+                      <option value="星期四">星期四</option>
+                      <option value="星期五">星期五</option>
+                      <option value="星期六">星期六</option>
+                      <option value="星期日">星期日</option>
+                    </select>
+                    <input placeholder="志願時間 (例: 19:00 - 21:00)" value={newStudent.preferredTime} onChange={e => setNewStudent({...newStudent, preferredTime: e.target.value})} style={{ ...inputStyle, flex: 1.5 }} />
+                  </div>
+
                   <textarea placeholder="備註" value={newStudent.notes} onChange={e => setNewStudent({...newStudent, notes: e.target.value})} style={{ ...inputStyle, height: '60px' }} />
-                  <button type="submit" style={{ padding: '10px', backgroundColor: '#5b8bf7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>儲存學員</button>
+                  
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: editingStudentId ? '#e6b800' : '#5b8bf7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>
+                      {editingStudentId ? '儲存變更' : '儲存學員'}
+                    </button>
+                    {editingStudentId && (
+                      <button type="button" onClick={() => {
+                        setEditingStudentId(null);
+                        setNewStudent({ name: '', phone: '', level: '初級', preferredDay: '星期一', preferredTime: '', notes: '' });
+                      }} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px' }}>取消</button>
+                    )}
+                  </div>
                 </form>
               </div>
+
               {filteredStudents.map(s => (
                 <div key={s.id} style={cardStyle}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <strong>{s.name} ({s.level})</strong>
-                    <button onClick={() => openWhatsApp(s.phone, s.name, null)} style={{ padding: '4px 10px', backgroundColor: '#62d890', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>💬 WhatsApp</button>
+                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                      <button onClick={() => openWhatsApp(s.phone, s.name, null)} style={{ padding: '4px 8px', backgroundColor: '#62d890', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>💬 WhatsApp</button>
+                      <button onClick={() => handleEditStudent(s)} title="修改學員" style={{ ...iconBtnStyle, backgroundColor: '#e0e0e0', color: '#333' }}>✏️</button>
+                      <button onClick={() => handleDeleteStudent(s.id)} title="刪除學員" style={{ ...iconBtnStyle, backgroundColor: '#e57373', color: '#fff' }}>❌</button>
+                    </div>
                   </div>
-                  <div style={{ fontSize: '12px', color: '#555', marginTop: '6px' }}>📞 {s.phone || '無電話'} | 📝 {s.notes || '無備註'}</div>
+                  <div style={{ fontSize: '12px', color: '#555', marginTop: '6px' }}>📞 {s.phone || '無電話'}</div>
+                  <div style={{ fontSize: '12px', color: '#444', marginTop: '4px', fontWeight: '500' }}>
+                    ⏰ 志願時間：<span style={{ color: '#2b580c' }}>{s.preferredDay || '未設定'} {s.preferredTime || ''}</span>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#777', marginTop: '4px' }}>📝 {s.notes || '無備註'}</div>
                 </div>
               ))}
             </div>
@@ -424,6 +493,7 @@
                 <h3 style={{ marginTop: 0 }}>👤 {selectedStudentDetail.name} 詳情</h3>
                 <p><strong>程度：</strong>{selectedStudentDetail.level}</p>
                 <p><strong>電話：</strong>{selectedStudentDetail.phone || '無'}</p>
+                <p><strong>志願時間：</strong>{selectedStudentDetail.preferredDay || ''} {selectedStudentDetail.preferredTime || '未設定'}</p>
                 <p><strong>備註：</strong>{selectedStudentDetail.notes || '無'}</p>
                 <div style={{ display: 'flex', gap: '8px', marginTop: '15px' }}>
                   <button onClick={() => openWhatsApp(selectedStudentDetail.phone, selectedStudentDetail.name, currentLessonForModal)} style={{ flex: 1, padding: '8px', backgroundColor: '#62d890', color: '#fff', border: 'none', borderRadius: '6px' }}>💬 發送課堂 WhatsApp</button>
