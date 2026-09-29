@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TH.badminton</title>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body style="margin: 0; background-color: #f8f9fa;">
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+
+    function BadmintonCoachApp() {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const currentMonthStr = todayStr.substring(0, 7);
+
+      const [courseTypes, setCourseTypes] = useState(() => {
+        const saved = localStorage.getItem('th_badminton_courseTypes');
+        return saved ? JSON.parse(saved) : [
+          { id: '1', name: '一對一私人班', duration: '1小時', defaultPrice: 500 },
+          { id: '2', name: '小班教學', duration: '2小時', defaultPrice: 250 },
+        ];
+      });
+      const [newCourseType, setNewCourseType] = useState({ name: '', duration: '1小時', defaultPrice: '' });
+
+      const [students, setStudents] = useState(() => {
+        const saved = localStorage.getItem('th_badminton_students');
+        return saved ? JSON.parse(saved) : [
+          { id: 1, name: '張小明', phone: '91234567', level: '初級', notes: '習慣右手，想練高遠球' },
+          { id: 2, name: '李阿華', phone: '98765432', level: '中級', notes: '主力練雙打平抽' }
+        ];
+      });
+      const [searchQuery, setSearchQuery] = useState('');
+      const [newStudent, setNewStudent] = useState({ name: '', phone: '', level: '初級', notes: '' });
+
+      const [schedule, setSchedule] = useState(() => {
+        const saved = localStorage.getItem('th_badminton_schedule');
+        return saved ? JSON.parse(saved) : [
+          { id: 1, studentName: '張小明', courseName: '一對一私人班', duration: '1小時', price: 500, isPaid: false, date: todayStr, time: '19:00', court: '中山紀念公園體育館' },
+          { id: 2, studentName: '李阿華', courseName: '小班教學', duration: '2小時', price: 250, isPaid: true, date: todayStr, time: '10:00', court: '九龍灣體育館' }
+        ];
+      });
+
+      useEffect(() => { localStorage.setItem('th_badminton_courseTypes', JSON.stringify(courseTypes)); }, [courseTypes]);
+      useEffect(() => { localStorage.setItem('th_badminton_students', JSON.stringify(students)); }, [students]);
+      useEffect(() => { localStorage.setItem('th_badminton_schedule', JSON.stringify(schedule)); }, [schedule]);
+
+      const [activeTab, setActiveTab] = useState('schedule');
+      const [editingLessonId, setEditingLessonId] = useState(null);
+      const [selectedStudentDetail, setSelectedStudentDetail] = useState(null); 
+      const [currentLessonForModal, setCurrentLessonForModal] = useState(null);
+
+      const [selectedDate, setSelectedDate] = useState(todayStr);
+      const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
+
+      const [lessonForm, setLessonForm] = useState({
+        studentName: '', courseTypeId: '1', price: 500, date: todayStr, time: '19:00', court: ''
+      });
+
+      const getFull6WeeksGrid = (yearMonth) => {
+        const [year, month] = yearMonth.split('-').map(Number);
+        const firstDayIndex = new Date(year, month - 1, 1).getDay();
+        const prevMonthLastDate = new Date(year, month - 1, 0).getDate();
+        const currentMonthLastDate = new Date(year, month, 0).getDate();
+        
+        const days = [];
+
+        for (let i = firstDayIndex - 1; i >= 0; i--) {
+          const pDay = prevMonthLastDate - i;
+          const pMonth = month - 1 === 0 ? 12 : month - 1;
+          const pYear = month - 1 === 0 ? year - 1 : year;
+          const dateStr = `${pYear}-${String(pMonth).padStart(2, '0')}-${String(pDay).padStart(2, '0')}`;
+          days.push({ dateStr, dayNum: pDay, isCurrentMonth: false });
+        }
+
+        for (let d = 1; d <= currentMonthLastDate; d++) {
+          const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          days.push({ dateStr, dayNum: d, isCurrentMonth: true });
+        }
+
+        let nextDay = 1;
+        while (days.length < 42) {
+          const nMonth = month + 1 === 13 ? 1 : month + 1;
+          const nYear = month + 1 === 13 ? year + 1 : year;
+          const dateStr = `${nYear}-${String(nMonth).padStart(2, '0')}-${String(nextDay).padStart(2, '0')}`;
+          days.push({ dateStr, dayNum: nextDay, isCurrentMonth: false });
+          nextDay++;
+        }
+
+        return days;
+      };
+
+      const getNext6DaysRange = () => {
+        const range = [];
+        const baseDate = new Date();
+        for (let i = 1; i <= 6; i++) {
+          const d = new Date(baseDate);
+          d.setDate(d.getDate() + i);
+          range.push(d.toISOString().split('T')[0]);
+        }
+        return range;
+      };
+
+      const next6DaysList = getNext6DaysRange();
+      const daySchedule = schedule.filter(item => item.date === selectedDate);
+
+      const monthlySchedule = schedule.filter(item => item.date.startsWith(selectedMonth));
+      const totalRevenue = monthlySchedule.reduce((acc, item) => acc + item.price, 0);
+      const paidRevenue = monthlySchedule.filter(item => item.isPaid).reduce((acc, item) => acc + item.price, 0);
+      const unpaidRevenue = totalRevenue - paidRevenue;
+
+      const filteredStudents = students.filter(s => s.name.includes(searchQuery) || s.phone.includes(searchQuery));
+
+      const openWhatsApp = (phone, studentName, lesson) => {
+        if (!phone) { alert('該學員尚未填寫電話號碼！'); return; }
+        const cleanPhone = phone.replace(/\D/g, '');
+        const formattedPhone = cleanPhone.length === 8 ? `852${cleanPhone}` : cleanPhone;
+        let msg = `你好 ${studentName}！`;
+        if (lesson) msg += `關於我們在 ${lesson.date} ${lesson.time} 的羽毛球課 (${lesson.courseName})：`;
+        window.open(`https://wa.me/${formattedPhone}?text=${encodeURIComponent(msg)}`, '_blank');
+      };
+
+      const handleStudentDetailOpen = (lesson) => {
+        const found = students.find(s => s.name === lesson.studentName);
+        setSelectedStudentDetail(found || { name: lesson.studentName, phone: '', level: '未登記', notes: '無紀錄' });
+        setCurrentLessonForModal(lesson);
+      };
+
+      const handleRenewLesson = (item) => {
+        const currentDate = new Date(item.date);
+        currentDate.setDate(currentDate.getDate() + 7);
+        const nextDateStr = currentDate.toISOString().split('T')[0];
+        setSchedule([...schedule, { ...item, id: Date.now(), date: nextDateStr, isPaid: false }]);
+        alert(`成功為 ${item.studentName} 續堂！新課堂日期：${nextDateStr}`);
+      };
+
+      const addToAppleCalendar = (item) => {
+        const dateStr = item.date.replace(/-/g, '');
+        const timeStr = item.time.replace(':', '') + '00';
+        const startDT = `${dateStr}T${timeStr}`;
+        let hours = (parseInt(item.time.split(':')[0], 10) + (item.duration.includes('2') ? 2 : 1)) % 24;
+        const endDT = `${dateStr}T${hours < 10 ? '0' + hours : hours}${item.time.split(':')[1]}00`;
+
+        const icsContent = [
+          'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TH.badminton App//EN', 'BEGIN:VEVENT',
+          `SUMMARY:🏸 羽毛球課 - ${item.studentName} (${item.courseName})`,
+          `DESCRIPTION:學員：${item.studentName}\\n課程：${item.courseName}\\n費用：HK$${item.price}`,
+          `LOCATION:${item.court || '體育館'}`, `DTSTART:${startDT}`, `DTEND:${endDT}`, 'END:VEVENT', 'END:VCALENDAR'
+        ].join('\r\n');
+
+        const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `badminton_${item.studentName}_${item.date}.ics`);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      };
+
+      const handleSaveLesson = (e) => {
+        e.preventDefault();
+        if (!lessonForm.studentName || !lessonForm.date) return;
+        const selectedType = courseTypes.find(c => c.id === lessonForm.courseTypeId) || { name: '自訂課程', duration: '1小時' };
+
+        if (editingLessonId) {
+          setSchedule(schedule.map(item => item.id === editingLessonId ? {
+            ...item, studentName: lessonForm.studentName, courseName: selectedType.name,
+            duration: selectedType.duration, price: Number(lessonForm.price), date: lessonForm.date, time: lessonForm.time, court: lessonForm.court
+          } : item));
+          setEditingLessonId(null);
+        } else {
+          setSchedule([...schedule, {
+            id: Date.now(), studentName: lessonForm.studentName, courseName: selectedType.name,
+            duration: selectedType.duration, price: Number(lessonForm.price), isPaid: false, date: lessonForm.date, time: lessonForm.time, court: lessonForm.court || '未定'
+          }]);
+        }
+        setLessonForm({ ...lessonForm, studentName: '' });
+      };
+
+      const handleStartEdit = (item) => {
+        setEditingLessonId(item.id);
+        setActiveTab('schedule');
+        const type = courseTypes.find(c => c.name === item.courseName) || courseTypes[0];
+        setLessonForm({ studentName: item.studentName, courseTypeId: type ? type.id : '', price: item.price, date: item.date, time: item.time, court: item.court });
+      };
+
+      const handleAddCourseType = (e) => {
+        e.preventDefault();
+        if (!newCourseType.name || !newCourseType.defaultPrice) return;
+        setCourseTypes([...courseTypes, { id: String(Date.now()), name: newCourseType.name, duration: newCourseType.duration, defaultPrice: Number(newCourseType.defaultPrice) }]);
+        setNewCourseType({ name: '', duration: '1小時', defaultPrice: '' });
+      };
+
+      const handleDeleteCourseType = (id) => {
+        if (courseTypes.length <= 1) { alert('請至少保留一種課程類型！'); return; }
+        setCourseTypes(courseTypes.filter(c => c.id !== id));
+      };
+
+      const inputStyle = { width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '14px' };
+      const cardStyle = { backgroundColor: '#fff', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
+      const weekLabels = ['日', '一', '二', '三', '四', '五', '六'];
+
+      const iconBtnStyle = {
+        padding: '6px 8px',
+        borderRadius: '6px',
+        border: 'none',
+        fontSize: '13px',
+        cursor: 'pointer',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      };
+
+      return (
+        <div style={{ maxWidth: '480px', margin: '0 auto', padding: '15px 15px 75px 15px', fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', backgroundColor: '#f8f9fa', minHeight: '100vh', boxSizing: 'border-box' }}>
+          <header style={{ textAlign: 'center', marginBottom: '15px' }}>
+            <h1 style={{ fontSize: '20px', margin: '0', color: '#1a1a1a', fontWeight: 'bold' }}>🏸 TH.badminton</h1>
+          </header>
+
+          {activeTab === 'schedule' && (
+            <div>
+              <div style={{ ...cardStyle, border: editingLessonId ? '2px solid #e6c260' : '1px solid #eee' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>{editingLessonId ? '✏️ 修改/改期課堂' : '➕ 新增預約課堂'}</h3>
+                <form onSubmit={handleSaveLesson} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <select value={lessonForm.studentName} onChange={e => setLessonForm({...lessonForm, studentName: e.target.value})} required style={inputStyle}>
+                    <option value="">-- 選擇學員 --</option>
+                    {students.map(s => <option key={s.id} value={s.name}>{s.name}</option>)}
+                  </select>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select value={lessonForm.courseTypeId} onChange={e => {
+                      const selected = courseTypes.find(c => c.id === e.target.value);
+                      setLessonForm({ ...lessonForm, courseTypeId: e.target.value, price: selected ? selected.defaultPrice : 0 });
+                    }} style={{ ...inputStyle, flex: 1 }}>
+                      {courseTypes.map(c => <option key={c.id} value={c.id}>{c.name} ({c.duration})</option>)}
+                    </select>
+                    <input type="number" placeholder="學費" value={lessonForm.price} onChange={e => setLessonForm({...lessonForm, price: e.target.value})} style={{ ...inputStyle, width: '90px' }} />
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input type="date" value={lessonForm.date} onChange={e => {
+                      setLessonForm({...lessonForm, date: e.target.value});
+                      setSelectedDate(e.target.value);
+                      setSelectedMonth(e.target.value.substring(0, 7));
+                    }} required style={{ ...inputStyle, flex: 1 }} />
+                    <input type="time" value={lessonForm.time} onChange={e => setLessonForm({...lessonForm, time: e.target.value})} style={{ ...inputStyle, flex: 1 }} />
+                  </div>
+                  <input placeholder="球場地點 (例: 九龍灣體育館)" value={lessonForm.court} onChange={e => setLessonForm({...lessonForm, court: e.target.value})} style={inputStyle} />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: editingLessonId ? '#e6b800' : '#4eac6d', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>{editingLessonId ? '保存變更' : '確認預約'}</button>
+                    {editingLessonId && <button type="button" onClick={() => setEditingLessonId(null)} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px' }}>取消</button>}
+                  </div>
+                </form>
+              </div>
+
+              <div style={{ ...cardStyle, padding: '10px' }}>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '8px' }}>
+                  <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #ccc' }} />
+                </div>
+
+                <div style={{ marginTop: '8px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: '#777', marginBottom: '6px' }}>
+                    {weekLabels.map((w, idx) => <div key={idx}>{w}</div>)}
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center' }}>
+                    {getFull6WeeksGrid(selectedMonth).map(({ dateStr, dayNum, isCurrentMonth }) => {
+                      const hasLesson = schedule.some(s => s.date === dateStr);
+                      const isSelected = dateStr === selectedDate;
+                      const isNext6Days = next6DaysList.includes(dateStr);
+
+                      let bgColor = '#f0f0f0';
+                      let textColor = isCurrentMonth ? '#333' : '#bbb';
+
+                      if (isNext6Days) {
+                        bgColor = '#ffebee'; 
+                        textColor = isCurrentMonth ? '#c62828' : '#ef9a9a';
+                      }
+
+                      if (isSelected) {
+                        bgColor = '#5b8bf7';
+                        textColor = '#fff';
+                      }
+
+                      return (
+                        <div 
+                          key={dateStr} 
+                          onClick={() => {
+                            setSelectedDate(dateStr);
+                            if (!isCurrentMonth) {
+                              setSelectedMonth(dateStr.substring(0, 7));
+                            }
+                          }} 
+                          style={{ 
+                            height: '36px', 
+                            display: 'flex', 
+                            flexDirection: 'column', 
+                            alignItems: 'center', 
+                            justifyContent: 'center', 
+                            borderRadius: '8px', 
+                            backgroundColor: bgColor, 
+                            color: textColor, 
+                            fontSize: '13px', 
+                            fontWeight: isSelected || isNext6Days ? 'bold' : 'normal', 
+                            position: 'relative', 
+                            cursor: 'pointer',
+                            boxSizing: 'border-box',
+                            border: isNext6Days && !isSelected ? '1px dashed #ef9a9a' : 'none',
+                            opacity: isCurrentMonth ? 1 : 0.65
+                          }}>
+                          {dayNum}
+                          {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected ? '#fff' : '#e57373', position: 'absolute', bottom: '3px' }} />}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px', color: '#555' }}>
+                📌 {selectedDate} 的課節 ({daySchedule.length})：
+              </div>
+
+              {daySchedule.length === 0 ? (
+                <div style={{ ...cardStyle, textAlign: 'center', color: '#999', padding: '20px' }}>
+                  今天沒有排課記錄
+                </div>
+              ) : (
+                daySchedule.map(item => (
+                  <div key={item.id} onDoubleClick={() => handleStudentDetailOpen(item)} style={{ ...cardStyle, borderLeft: item.isPaid ? '5px solid #66bb6a' : '5px solid #ef5350', cursor: 'pointer' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <strong>👤 {item.studentName}</strong>
+                      <span style={{ fontSize: '12px', color: '#666' }}>{item.courseName} ({item.duration})</span>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#555', margin: '6px 0' }}>📅 {item.date} {item.time} | 📍 {item.court}</div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '8px' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '14px' }}>HK$ {item.price}</span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button onClick={() => addToAppleCalendar(item)} title="加入行事曆" style={{ ...iconBtnStyle, backgroundColor: '#78c1cc', color: '#fff' }}>🗓️</button>
+                        <button onClick={() => setSchedule(schedule.map(s => s.id === item.id ? { ...s, isPaid: !s.isPaid } : s))} title={item.isPaid ? '改為未付' : '改為已付'} style={{ ...iconBtnStyle, backgroundColor: item.isPaid ? '#a3d9a5' : '#f8b1b1', color: item.isPaid ? '#1b5e20' : '#b71c1c' }}>
+                          {item.isPaid ? '✅' : '⏳'}
+                        </button>
+                        <button onClick={() => handleRenewLesson(item)} title="下週續堂" style={{ ...iconBtnStyle, backgroundColor: '#fabb6e', color: '#fff' }}>🔄</button>
+                        <button onClick={() => handleStartEdit(item)} title="編輯" style={{ ...iconBtnStyle, backgroundColor: '#e0e0e0', color: '#333' }}>✏️</button>
+                        <button onClick={() => setSchedule(schedule.filter(s => s.id !== item.id))} title="刪除" style={{ ...iconBtnStyle, backgroundColor: '#e57373', color: '#fff' }}>❌</button>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          {activeTab === 'revenue' && (
+            <div>
+              <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontWeight: 'bold', fontSize: '14px' }}>統計月份：</span>
+                <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '6px', fontSize: '14px', borderRadius: '6px', border: '1px solid #ccc' }} />
+              </div>
+              <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '5px', textAlign: 'center' }}>
+                <div><div style={{ fontSize: '12px', color: '#666' }}>總預約額</div><div style={{ fontSize: '16px', fontWeight: 'bold', color: '#5b8bf7' }}>${totalRevenue}</div></div>
+                <div><div style={{ fontSize: '12px', color: '#666' }}>已實收</div><div style={{ fontSize: '16px', fontWeight: 'bold', color: '#66bb6a' }}>${paidRevenue}</div></div>
+                <div><div style={{ fontSize: '12px', color: '#666' }}>待追收</div><div style={{ fontSize: '16px', fontWeight: 'bold', color: '#ef5350' }}>${unpaidRevenue}</div></div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'students' && (
+            <div>
+              <input placeholder="🔍 搜尋學員姓名或電話..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} style={{ ...inputStyle, marginBottom: '12px' }} />
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>➕ 新增學員</h3>
+                <form onSubmit={e => { e.preventDefault(); if (!newStudent.name) return; setStudents([...students, { ...newStudent, id: Date.now() }]); setNewStudent({ name: '', phone: '', level: '初級', notes: '' }); }} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <input placeholder="姓名" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} required style={inputStyle} />
+                  <input placeholder="電話" value={newStudent.phone} onChange={e => setNewStudent({...newStudent, phone: e.target.value})} style={inputStyle} />
+                  <textarea placeholder="備註" value={newStudent.notes} onChange={e => setNewStudent({...newStudent, notes: e.target.value})} style={{ ...inputStyle, height: '60px' }} />
+                  <button type="submit" style={{ padding: '10px', backgroundColor: '#5b8bf7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>儲存學員</button>
+                </form>
+              </div>
+              {filteredStudents.map(s => (
+                <div key={s.id} style={cardStyle}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong>{s.name} ({s.level})</strong>
+                    <button onClick={() => openWhatsApp(s.phone, s.name, null)} style={{ padding: '4px 10px', backgroundColor: '#62d890', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>💬 WhatsApp</button>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#555', marginTop: '6px' }}>📞 {s.phone || '無電話'} | 📝 {s.notes || '無備註'}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {activeTab === 'settings' && (
+            <div>
+              <div style={cardStyle}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>➕ 新增課程類型</h3>
+                <form onSubmit={handleAddCourseType} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <input placeholder="課程名稱" value={newCourseType.name} onChange={e => setNewCourseType({...newCourseType, name: e.target.value})} required style={inputStyle} />
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select value={newCourseType.duration} onChange={e => setNewCourseType({...newCourseType, duration: e.target.value})} style={{ ...inputStyle, flex: 1 }}>
+                      <option value="1小時">1小時</option>
+                      <option value="1.5小時">1.5小時</option>
+                      <option value="2小時">2小時</option>
+                    </select>
+                    <input type="number" placeholder="學費" value={newCourseType.defaultPrice} onChange={e => setNewCourseType({...newCourseType, defaultPrice: e.target.value})} required style={{ ...inputStyle, flex: 1 }} />
+                  </div>
+                  <button type="submit" style={{ padding: '10px', backgroundColor: '#4eac6d', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>新增課程</button>
+                </form>
+              </div>
+              {courseTypes.map(c => (
+                <div key={c.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div><strong>{c.name}</strong> ({c.duration}) - HK$ {c.defaultPrice}</div>
+                  <button onClick={() => handleDeleteCourseType(c.id)} style={{ padding: '5px 10px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px' }}>刪除</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {selectedStudentDetail && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '20px' }}>
+              <div style={{ backgroundColor: '#fff', padding: '20px', borderRadius: '12px', width: '100%', maxWidth: '360px' }}>
+                <h3 style={{ marginTop: 0 }}>👤 {selectedStudentDetail.name} 詳情</h3>
+                <p><strong>程度：</strong>{selectedStudentDetail.level}</p>
+                <p><strong>電話：</strong>{selectedStudentDetail.phone || '無'}</p>
+                <p><strong>備註：</strong>{selectedStudentDetail.notes || '無'}</p>
+                <div style={{ display: 'flex', gap: '8px', marginTop: '15px' }}>
+                  <button onClick={() => openWhatsApp(selectedStudentDetail.phone, selectedStudentDetail.name, currentLessonForModal)} style={{ flex: 1, padding: '8px', backgroundColor: '#62d890', color: '#fff', border: 'none', borderRadius: '6px' }}>💬 發送課堂 WhatsApp</button>
+                  <button onClick={() => setSelectedStudentDetail(null)} style={{ padding: '8px 15px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px' }}>關閉</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <nav style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '1px solid #e0e0e0', display: 'flex', justifyContent: 'space-around', padding: '8px 0', zIndex: 1000, maxWidth: '480px', margin: '0 auto' }}>
+            <button onClick={() => setActiveTab('schedule')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'schedule' ? '#5b8bf7' : '#8e8e93', fontSize: '11px' }}>📅<br/>課表</button>
+            <button onClick={() => setActiveTab('revenue')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'revenue' ? '#5b8bf7' : '#8e8e93', fontSize: '11px' }}>💰<br/>收入</button>
+            <button onClick={() => setActiveTab('students')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'students' ? '#5b8bf7' : '#8e8e93', fontSize: '11px' }}>👤<br/>學員</button>
+            <button onClick={() => setActiveTab('settings')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'settings' ? '#5b8bf7' : '#8e8e93', fontSize: '11px' }}>⚙️<br/>設定</button>
+          </nav>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<BadmintonCoachApp />);
+  </script>
+</body>
+</html>
