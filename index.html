@@ -16,8 +16,9 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      // 系統版本號管理
-      const APP_VERSION = "v1.3.2";
+      // 系統版本號與更新時間管理 (每次更新可在這裡修改)
+      const APP_VERSION = "v1.4.1";
+      const LAST_UPDATED = "2026-09-29 14:30";
 
       const todayStr = new Date().toISOString().split('T')[0];
       const currentMonthStr = todayStr.substring(0, 7);
@@ -237,7 +238,6 @@
         setCourseTypes(courseTypes.filter(c => c.id !== id));
       };
 
-      // 匯出/備份資料功能
       const exportBackupData = () => {
         const backupData = {
           courseTypes,
@@ -253,7 +253,29 @@
         a.click();
       };
 
-      // 強制重載頁面功能
+      const importBackupData = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          try {
+            const importedData = JSON.parse(e.target.result);
+            
+            if (confirm('確定要匯入此備份嗎？這將會覆蓋當前的學員與課表資料！')) {
+              if (importedData.courseTypes) setCourseTypes(importedData.courseTypes);
+              if (importedData.students) setStudents(importedData.students);
+              if (importedData.schedule) setSchedule(importedData.schedule);
+              
+              alert('🎉 資料成功還原！');
+            }
+          } catch (err) {
+            alert('❌ 檔案格式錯誤，請選擇正確的 JSON 備份檔！');
+          }
+        };
+        reader.readAsText(file);
+      };
+
       const forceReloadApp = () => {
         if (confirm('這將會無視頁面快取並重新載入最新版本（你的學員與課表資料會完好保存），確定要更新嗎？')) {
           window.location.reload(true);
@@ -533,19 +555,26 @@
               ))}
 
               <div style={{ ...cardStyle, marginTop: '20px' }}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>🛠️ 系統維護與更新</h3>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>🛠️ 系統維護與資料備份</h3>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <button onClick={forceReloadApp} style={{ padding: '10px', backgroundColor: '#5b8bf7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>
                     🔄 強制更新至最新版本 (清除快取)
                   </button>
                   <button onClick={exportBackupData} style={{ padding: '10px', backgroundColor: '#6c757d', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px' }}>
-                    📥 備份學員與課表資料 (.json)
+                    📥 下載備份資料 (.json)
                   </button>
+                  
+                  <label style={{ padding: '10px', backgroundColor: '#e67e22', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', textAlign: 'center', cursor: 'pointer' }}>
+                    📤 還原 / 匯入備份資料
+                    <input type="file" accept=".json" onChange={importBackupData} style={{ display: 'none' }} />
+                  </label>
                 </div>
               </div>
 
-              <div style={{ textAlign: 'center', marginTop: '20px', color: '#888', fontSize: '12px' }}>
-                📌 當前版本：{APP_VERSION}
+              {/* 顯示版本與最後更新時間 */}
+              <div style={{ textAlign: 'center', marginTop: '20px', color: '#888', fontSize: '12px', lineHeight: '1.6' }}>
+                📌 當前版本：<strong>{APP_VERSION}</strong><br/>
+                🕒 最後更新時間：<span>{LAST_UPDATED}</span>
               </div>
             </div>
           )}
