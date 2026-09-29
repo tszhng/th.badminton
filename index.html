@@ -16,8 +16,8 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v2.3.0";
-      const LAST_UPDATED = "2026-09-30 01:30";
+      const APP_VERSION = "v2.3.1";
+      const LAST_UPDATED = "2026-09-30 01:45";
 
       const todayStr = new Date().toISOString().split('T')[0];
       const currentMonthStr = todayStr.substring(0, 7);
@@ -363,7 +363,7 @@
         reader.readAsText(file);
       };
 
-      const inputStyle = { width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '13px' };
+      const inputStyle = { width: '100%', padding: '6px 8px', borderRadius: '6px', border: '1px solid #ccc', boxSizing: 'border-box', fontSize: '13px', appearance: 'none', WebkitAppearance: 'none' };
       const cardStyle = { backgroundColor: '#fff', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
       const weekLabels = ['日', '一', '二', '三', '四', '五', '六'];
 
@@ -402,7 +402,7 @@
                           });
                         }
                       }} 
-                      style={inputStyle}>
+                      style={{ ...inputStyle, paddingRight: '20px' }}>
                       {courseTypes.map(c => (
                         <option key={c.id} value={c.id}>
                           {c.name} (上限{c.maxCapacity}人 - 課堂費${c.defaultCoachFee} + 場地費${c.defaultCourtFee})
@@ -440,16 +440,18 @@
                     💡 應收總學費：HK$ {(Number(lessonForm.coachFee) || 0) + (Number(lessonForm.courtFee) || 0)}
                   </div>
 
-                  {/* 緊湊橫排：日期、開始時間、結束時間 */}
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <div style={{ flex: 1.2 }}>
-                      <label style={{ fontSize: '11px', color: '#666' }}>日期</label>
-                      <input type="date" value={lessonForm.date} onChange={e => {
-                        setLessonForm({...lessonForm, date: e.target.value});
-                        setSelectedDate(e.target.value);
-                        setSelectedMonth(e.target.value.substring(0, 7));
-                      }} required style={inputStyle} />
-                    </div>
+                  {/* 第一排：日期全寬 (避免原生的 input date 壓出螢幕) */}
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#666' }}>日期</label>
+                    <input type="date" value={lessonForm.date} onChange={e => {
+                      setLessonForm({...lessonForm, date: e.target.value});
+                      setSelectedDate(e.target.value);
+                      setSelectedMonth(e.target.value.substring(0, 7));
+                    }} required style={{ ...inputStyle, width: '100%' }} />
+                  </div>
+
+                  {/* 第二排：開始時間 & 結束時間 (二分滿版) */}
+                  <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '11px', color: '#666' }}>開始時間</label>
                       <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={inputStyle} />
@@ -746,7 +748,7 @@
                           defaultCoachFee: c.defaultCoachFee,
                           defaultCourtFee: c.defaultCourtFee
                         });
-                      }} style={{ padding: '4px 8px', backgroundColor: '#e0e0e0', color: '#333', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>✏️️ 編輯</button>
+                      }} style={{ padding: '4px 8px', backgroundColor: '#e0e0e0', color: '#333', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>✏️ 編輯</button>
                       <button onClick={() => setCourseTypes(courseTypes.filter(ct => ct.id !== c.id))} style={{ padding: '4px 8px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>刪除</button>
                     </div>
                   </div>
