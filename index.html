@@ -16,6 +16,9 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
+      // 系統版本號管理
+      const APP_VERSION = "v1.3.0";
+
       const todayStr = new Date().toISOString().split('T')[0];
       const currentMonthStr = todayStr.substring(0, 7);
 
@@ -409,9 +412,18 @@
                 <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>{editingStudentId ? '✏️ 修改學員資料' : '➕ 新增學員'}</h3>
                 <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <input placeholder="姓名" value={newStudent.name} onChange={e => setNewStudent({...newStudent, name: e.target.value})} required style={inputStyle} />
-                  <input placeholder="電話" value={newStudent.phone} onChange={e => setNewStudent({...newStudent, phone: e.target.value})} style={inputStyle} />
                   
-                  {/* 志願時間欄位 */}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <input placeholder="電話" value={newStudent.phone} onChange={e => setNewStudent({...newStudent, phone: e.target.value})} style={{ ...inputStyle, flex: 1 }} />
+                    <select value={newStudent.level} onChange={e => setNewStudent({...newStudent, level: e.target.value})} style={{ ...inputStyle, flex: 1 }}>
+                      <option value="新手">新手</option>
+                      <option value="近初">近初</option>
+                      <option value="初級">初級</option>
+                      <option value="初中">初中</option>
+                      <option value="中級">中級</option>
+                    </select>
+                  </div>
+                  
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <select value={newStudent.preferredDay} onChange={e => setNewStudent({...newStudent, preferredDay: e.target.value})} style={{ ...inputStyle, flex: 1 }}>
                       <option value="星期一">星期一</option>
@@ -444,7 +456,7 @@
               {filteredStudents.map(s => (
                 <div key={s.id} style={cardStyle}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong>{s.name} ({s.level})</strong>
+                    <strong>{s.name} ({s.level || '初級'})</strong>
                     <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
                       <button onClick={() => openWhatsApp(s.phone, s.name, null)} style={{ padding: '4px 8px', backgroundColor: '#62d890', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold' }}>💬 WhatsApp</button>
                       <button onClick={() => handleEditStudent(s)} title="修改學員" style={{ ...iconBtnStyle, backgroundColor: '#e0e0e0', color: '#333' }}>✏️</button>
@@ -478,12 +490,18 @@
                   <button type="submit" style={{ padding: '10px', backgroundColor: '#4eac6d', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold' }}>新增課程</button>
                 </form>
               </div>
+
               {courseTypes.map(c => (
                 <div key={c.id} style={{ ...cardStyle, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div><strong>{c.name}</strong> ({c.duration}) - HK$ {c.defaultPrice}</div>
                   <button onClick={() => handleDeleteCourseType(c.id)} style={{ padding: '5px 10px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px' }}>刪除</button>
                 </div>
               ))}
+
+              {/* 設定頁最下方的版本號提示 */}
+              <div style={{ textAlign: 'center', marginTop: '25px', color: '#888', fontSize: '12px' }}>
+                📌 當前版本：{APP_VERSION}
+              </div>
             </div>
           )}
 
