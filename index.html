@@ -16,14 +16,35 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v3.1.0";
-      const LAST_UPDATED = "2026-09-30 23:30";
+      const APP_VERSION = "v3.2.0";
+      const LAST_UPDATED = "2026-10-01 07:35";
 
-      const getTodayString = () => new Date().toISOString().split('T')[0];
+      // 取得當前真實日期的工具函式 (格式: YYYY-MM-DD)
+      const getRealTodayString = () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
       const getMonthString = (dateStr) => dateStr.substring(0, 7);
 
-      const todayStr = getTodayString();
-      const currentMonthStr = getMonthString(todayStr);
+      // 動態追蹤當前最新日期
+      const [todayStr, setTodayStr] = useState(getRealTodayString());
+      const [selectedDate, setSelectedDate] = useState(todayStr);
+      const [selectedMonth, setSelectedMonth] = useState(getMonthString(todayStr));
+
+      // 每分鐘自動檢查一次日期，確保跨日或頁面長期開啟時日期會自動跳轉更新
+      useEffect(() => {
+        const interval = setInterval(() => {
+          const currentRealToday = getRealTodayString();
+          if (currentRealToday !== todayStr) {
+            setTodayStr(currentRealToday);
+          }
+        }, 60000);
+        return () => clearInterval(interval);
+      }, [todayStr]);
 
       // 1. 設定頁預設課程種類
       const [courseTypes, setCourseTypes] = useState(() => {
@@ -89,9 +110,6 @@
       const [addStudentSelect, setAddStudentSelect] = useState('');
       const [addStudentCustom, setAddStudentCustom] = useState('');
 
-      const [selectedDate, setSelectedDate] = useState(todayStr);
-      const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
-
       const [courseTypeForm, setCourseTypeForm] = useState({ name: '', maxCapacity: 4, feeMode: 'per_person', defaultCoachFee: '', defaultCourtFee: '' });
 
       const [lessonForm, setLessonForm] = useState({
@@ -108,10 +126,12 @@
         court: ''
       });
 
-      // 計算特定學員總共上了多少節課
-      const getStudentLessonCount = (studentName) => {
+      // 計算特定學員「已過期/今日」且有出席的課節總數
+      const getStudentCompletedLessonCount = (studentName) => {
         return schedule.filter(lesson => 
-          lesson.enrolledStudents && lesson.enrolledStudents.some(s => s.name === studentName)
+          lesson.date <= todayStr && 
+          lesson.enrolledStudents && 
+          lesson.enrolledStudents.some(s => s.name === studentName)
         ).length;
       };
 
@@ -503,7 +523,12 @@
               <div style={{ ...cardStyle, padding: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <button 
-                    onClick={() => { setSelectedDate(todayStr); setSelectedMonth(currentMonthStr); }} 
+                    onClick={() => { 
+                      const realToday = getRealTodayString();
+                      setTodayStr(realToday);
+                      setSelectedDate(realToday); 
+                      setSelectedMonth(getMonthString(realToday)); 
+                    }} 
                     style={{ padding: '4px 8px', fontSize: '12px', backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
                     📍 回到今天
                   </button>
@@ -726,7 +751,7 @@
 
               {/* 學員卡片列表 (已排序) */}
               {sortedStudents.filter(s => s.name.includes(searchQuery)).map(s => {
-                const count = getStudentLessonCount(s.name);
+                const count = getStudentCompletedLessonCount(s.name);
 
                 return (
                   <div 
@@ -743,7 +768,7 @@
                         {s.level || '新手'}
                       </span>
                       <span style={{ fontSize: '11px', color: '#2b580c', backgroundColor: '#e8f5e9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-                        📚 上課: {count} 堂
+                        📚 已上: {count} 堂
                       </span>
                     </div>
                     <span style={{ fontSize: '18px', color: '#ccc' }}>❯</span>
@@ -915,7 +940,7 @@
                   <div>
                     <strong>已上課節：</strong>
                     <span style={{ backgroundColor: '#e8f5e9', padding: '2px 8px', borderRadius: '4px', color: '#2e7d32', fontWeight: 'bold' }}>
-                      📚 {getStudentLessonCount(selectedStudentModal.name)} 堂
+                      📚 {getStudentCompletedLessonCount(selectedStudentModal.name)} 堂
                     </span>
                   </div>
                   <div><strong>電話：</strong>{selectedStudentModal.phone || '未提供'}</div>
