@@ -16,30 +16,29 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v2.6.0";
-      const LAST_UPDATED = "2026-09-30 02:45";
+      const APP_VERSION = "v2.7.0";
+      const LAST_UPDATED = "2026-09-30 03:00";
 
-      // 取得今天的 YYYY-MM-DD 與 YYYY-MM
       const getTodayString = () => new Date().toISOString().split('T')[0];
       const getMonthString = (dateStr) => dateStr.substring(0, 7);
 
       const todayStr = getTodayString();
       const currentMonthStr = getMonthString(todayStr);
 
-      // 1. 設定頁預設課程種類
+      // 1. 設定頁預設課程種類（新增 feeMode: 'per_person' | 'per_lesson'）
       const [courseTypes, setCourseTypes] = useState(() => {
         const saved = localStorage.getItem('th_badminton_courseTypes');
         return saved ? JSON.parse(saved) : [
-          { id: '1', name: '1人私教', maxCapacity: 1, duration: '1小時', defaultCoachFee: 500, defaultCourtFee: 150 },
-          { id: '2', name: '2-4人小班', maxCapacity: 4, duration: '2小時', defaultCoachFee: 800, defaultCourtFee: 200 },
-          { id: '3', name: '5-8人中班', maxCapacity: 8, duration: '2小時', defaultCoachFee: 1200, defaultCourtFee: 240 },
-          { id: '4', name: '8人以上大班', maxCapacity: 12, duration: '2小時', defaultCoachFee: 1500, defaultCourtFee: 300 },
+          { id: '1', name: '1人私教', maxCapacity: 1, duration: '1小時', feeMode: 'per_lesson', defaultCoachFee: 500, defaultCourtFee: 150 },
+          { id: '2', name: '2-4人小班', maxCapacity: 4, duration: '2小時', feeMode: 'per_person', defaultCoachFee: 200, defaultCourtFee: 200 },
+          { id: '3', name: '5-8人中班', maxCapacity: 8, duration: '2小時', feeMode: 'per_person', defaultCoachFee: 150, defaultCourtFee: 240 },
+          { id: '4', name: '8人以上大班', maxCapacity: 12, duration: '2小時', feeMode: 'per_person', defaultCoachFee: 120, defaultCourtFee: 300 },
         ];
       });
 
       const [editingCourseTypeId, setEditingCourseTypeId] = useState(null);
 
-      // 學員列表（預設等級改為 新手/近初/初級/初中/中級）
+      // 學員列表
       const [students, setStudents] = useState(() => {
         const saved = localStorage.getItem('th_badminton_students');
         return saved ? JSON.parse(saved) : [
@@ -60,6 +59,7 @@
             id: 1,
             courseName: '1人私教',
             maxCapacity: 1,
+            feeMode: 'per_lesson',
             coachFee: 500,
             courtFee: 150,
             date: todayStr,
@@ -82,17 +82,17 @@
       const [addStudentSelect, setAddStudentSelect] = useState('');
       const [addStudentCustom, setAddStudentCustom] = useState('');
 
-      // 預設選擇今天與當前月份
       const [selectedDate, setSelectedDate] = useState(todayStr);
       const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
 
-      const [courseTypeForm, setCourseTypeForm] = useState({ name: '', maxCapacity: 4, duration: '2小時', defaultCoachFee: '', defaultCourtFee: '' });
+      const [courseTypeForm, setCourseTypeForm] = useState({ name: '', maxCapacity: 4, feeMode: 'per_person', defaultCoachFee: '', defaultCourtFee: '' });
 
       // 排課表單
       const [lessonForm, setLessonForm] = useState({
         courseTypeId: '1',
         courseName: '1人私教',
         maxCapacity: 1,
+        feeMode: 'per_lesson',
         coachFee: 500,
         courtFee: 150,
         date: todayStr,
@@ -101,7 +101,21 @@
         court: ''
       });
 
-      // WhatsApp 導向工具
+      // 計算學費總額工具函式
+      const calculateTotalFee = (item, customStudentCount = null) => {
+        const coach = Number(item.coachFee) || 0;
+        const court = Number(item.courtFee) || 0;
+        const count = customStudentCount !== null 
+          ? customStudentCount 
+          : (item.enrolledStudents ? item.enrolledStudents.length : 0);
+
+        if (item.feeMode === 'per_person') {
+          return (coach * count) + court;
+        } else {
+          return coach + court;
+        }
+      };
+
       const openWhatsApp = (phone, message = '') => {
         if (!phone) {
           alert('⚠️ 該學員未填寫電話號碼！');
@@ -113,7 +127,6 @@
         window.open(`https://wa.me/${cleanPhone}?text=${encodedMsg}`, '_blank');
       };
 
-      // 計算 N 天後的日期字串
       const getDateOffsetStr = (offsetDays) => {
         const d = new Date();
         d.setDate(d.getDate() + offsetDays);
@@ -122,7 +135,6 @@
 
       const day7Str = getDateOffsetStr(7);
 
-      // 取得未來 6 天範圍陣列
       const getNext6DaysRange = () => {
         const range = [];
         const baseDate = new Date();
@@ -137,7 +149,6 @@
       const next6DaysList = getNext6DaysRange();
       const sixthDayStr = next6DaysList[5];
 
-      // 月曆網格邏輯
       const getFull6WeeksGrid = (yearMonth) => {
         const [year, month] = yearMonth.split('-').map(Number);
         const firstDayIndex = new Date(year, month - 1, 1).getDay();
@@ -167,8 +178,6 @@
       };
 
       const daySchedule = schedule.filter(item => item.date === selectedDate);
-
-      // 提醒事項：今天課堂與 7 天後課堂
       const todayLessons = schedule.filter(item => item.date === todayStr);
       const day7Lessons = schedule.filter(item => item.date === day7Str);
 
@@ -179,14 +188,13 @@
       let unpaidRevenue = 0;
 
       monthlySchedule.forEach(item => {
-        const totalFee = (Number(item.coachFee) || 0) + (Number(item.courtFee) || 0);
+        const totalFee = calculateTotalFee(item);
         totalRevenue += totalFee;
         const allPaid = item.enrolledStudents.length > 0 && item.enrolledStudents.every(s => s.isPaid);
         if (allPaid) paidRevenue += totalFee;
         else unpaidRevenue += totalFee;
       });
 
-      // 取消排課
       const handleCancelLesson = (lessonId) => {
         if (window.confirm("⚠️ 確定要取消這堂課嗎？所有學員紀錄將會移除。")) {
           setSchedule(schedule.filter(s => s.id !== lessonId));
@@ -196,7 +204,6 @@
         }
       };
 
-      // 保存排課
       const handleSaveLesson = (e) => {
         e.preventDefault();
 
@@ -205,6 +212,7 @@
             ...item,
             courseName: lessonForm.courseName,
             maxCapacity: Number(lessonForm.maxCapacity),
+            feeMode: lessonForm.feeMode,
             coachFee: Number(lessonForm.coachFee),
             courtFee: Number(lessonForm.courtFee),
             date: lessonForm.date,
@@ -218,6 +226,7 @@
             id: Date.now(),
             courseName: lessonForm.courseName,
             maxCapacity: Number(lessonForm.maxCapacity),
+            feeMode: lessonForm.feeMode,
             coachFee: Number(lessonForm.coachFee),
             courtFee: Number(lessonForm.courtFee),
             date: lessonForm.date,
@@ -229,7 +238,6 @@
         }
       };
 
-      // 雙擊彈窗中加人
       const handleAddStudentToLesson = () => {
         if (!selectedLessonModal) return;
         const targetName = addStudentCustom.trim() || addStudentSelect;
@@ -283,12 +291,12 @@
         const endDT = `${dateStr}T${endT}`;
 
         const studentListStr = item.enrolledStudents.map(s => s.name).join(', ') || '尚無學員';
-        const totalFee = (item.coachFee || 0) + (item.courtFee || 0);
+        const totalFee = calculateTotalFee(item);
 
         const icsContent = [
           'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TH.badminton App//EN', 'BEGIN:VEVENT',
           `SUMMARY:🏸 ${item.courseName} (${item.enrolledStudents.length}/${item.maxCapacity}人)`,
-          `DESCRIPTION:學員：${studentListStr}\\n課堂費：HK$${item.coachFee}\\n場地費：HK$${item.courtFee}\\n總學費：HK$${totalFee}`,
+          `DESCRIPTION:學員：${studentListStr}\\n計費模式：${item.feeMode === 'per_person' ? '每人學費' : '整堂學費'}\\n課堂費：HK$${item.coachFee}\\n場地費：HK$${item.courtFee}\\n預計總學費：HK$${totalFee}`,
           `LOCATION:${item.court || '體育館'}`, `DTSTART:${startDT}`, `DTEND:${endDT}`, 'END:VEVENT', 'END:VCALENDAR'
         ].join('\r\n');
 
@@ -302,7 +310,6 @@
         document.body.removeChild(link);
       };
 
-      // 學員管理
       const handleSaveStudent = (e) => {
         e.preventDefault();
         if (!studentForm.name) return;
@@ -326,7 +333,6 @@
         });
       };
 
-      // 設定頁：新增與修改課程類別
       const handleSaveCourseType = (e) => {
         e.preventDefault();
         if (!courseTypeForm.name || !courseTypeForm.defaultCoachFee) return;
@@ -336,6 +342,7 @@
             ...c,
             name: courseTypeForm.name,
             maxCapacity: Number(courseTypeForm.maxCapacity),
+            feeMode: courseTypeForm.feeMode,
             defaultCoachFee: Number(courseTypeForm.defaultCoachFee),
             defaultCourtFee: Number(courseTypeForm.defaultCourtFee || 0)
           } : c));
@@ -345,12 +352,13 @@
             id: String(Date.now()),
             name: courseTypeForm.name,
             maxCapacity: Number(courseTypeForm.maxCapacity),
+            feeMode: courseTypeForm.feeMode,
             duration: '2小時',
             defaultCoachFee: Number(courseTypeForm.defaultCoachFee),
             defaultCourtFee: Number(courseTypeForm.defaultCourtFee || 0)
           }]);
         }
-        setCourseTypeForm({ name: '', maxCapacity: 4, duration: '2小時', defaultCoachFee: '', defaultCourtFee: '' });
+        setCourseTypeForm({ name: '', maxCapacity: 4, feeMode: 'per_person', defaultCoachFee: '', defaultCourtFee: '' });
       };
 
       const exportBackupData = () => {
@@ -406,7 +414,6 @@
                   <span style={{ fontSize: '11px', color: '#888' }}>{todayStr}</span>
                 </div>
 
-                {/* 今日課節提醒 */}
                 <div style={{ fontSize: '12px', color: '#333', marginBottom: '8px' }}>
                   <strong>📍 今日上課通知 ({todayLessons.length} 堂)：</strong>
                   {todayLessons.length === 0 ? (
@@ -430,7 +437,6 @@
                   )}
                 </div>
 
-                {/* 7 天後課節提醒 (Book 場提醒) */}
                 <div style={{ fontSize: '12px', color: '#333' }}>
                   <strong>📆 7 天後課堂 / Book 場提醒 ({day7Str})：</strong>
                   {day7Lessons.length === 0 ? (
@@ -473,6 +479,7 @@
                             courseTypeId: selected.id,
                             courseName: selected.name,
                             maxCapacity: selected.maxCapacity,
+                            feeMode: selected.feeMode || 'per_person',
                             coachFee: selected.defaultCoachFee,
                             courtFee: selected.defaultCourtFee
                           });
@@ -481,7 +488,7 @@
                       style={{ ...inputStyle, paddingRight: '20px' }}>
                       {courseTypes.map(c => (
                         <option key={c.id} value={c.id}>
-                          {c.name} (上限{c.maxCapacity}人 - 課堂費${c.defaultCoachFee} + 場地費${c.defaultCourtFee})
+                          {c.name} ({c.feeMode === 'per_person' ? '每人' : '整堂'}${c.defaultCoachFee} + 場地費${c.defaultCourtFee})
                         </option>
                       ))}
                     </select>
@@ -499,8 +506,18 @@
                     </div>
                   </div>
 
-                  {/* 課堂費 + 場地費 */}
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  {/* 課堂費計費模式 + 課堂費 + 場地費 */}
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '11px', color: '#666' }}>計費模式</label>
+                      <select 
+                        value={lessonForm.feeMode} 
+                        onChange={e => setLessonForm({...lessonForm, feeMode: e.target.value})} 
+                        style={inputStyle}>
+                        <option value="per_person">按每人收費</option>
+                        <option value="per_lesson">按整堂收費</option>
+                      </select>
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '11px', color: '#666' }}>課堂費 (HK$)</label>
                       <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={inputStyle} required />
@@ -511,9 +528,12 @@
                     </div>
                   </div>
 
-                  {/* 顯示總金額算式 */}
+                  {/* 顯示總金額預算 */}
                   <div style={{ fontSize: '12px', color: '#2b580c', backgroundColor: '#f0f4f8', padding: '6px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
-                    💡 應收總學費：HK$ {(Number(lessonForm.coachFee) || 0) + (Number(lessonForm.courtFee) || 0)}
+                    💡 算式預覽：
+                    {lessonForm.feeMode === 'per_person' 
+                      ? ` (課堂費 $${lessonForm.coachFee || 0} × 人數) + 場地費 $${lessonForm.courtFee || 0}`
+                      : ` 課堂費 $${lessonForm.coachFee || 0} + 場地費 $${lessonForm.courtFee || 0} = HK$ ${(Number(lessonForm.coachFee) || 0) + (Number(lessonForm.courtFee) || 0)}`}
                   </div>
 
                   {/* 日期全寬 */}
@@ -622,7 +642,7 @@
               ) : (
                 daySchedule.map(item => {
                   const enrolledCount = item.enrolledStudents.length;
-                  const totalFee = (Number(item.coachFee) || 0) + (Number(item.courtFee) || 0);
+                  const totalFee = calculateTotalFee(item);
 
                   return (
                     <div 
@@ -632,14 +652,14 @@
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <strong style={{ fontSize: '15px' }}>🏸 {item.courseName}</strong>
-                        <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#2b580c' }}>總學費: HK$ {totalFee}</span>
+                        <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#2b580c' }}>預計學費: HK$ {totalFee}</span>
                       </div>
 
-                      {/* 課堂時間 */}
+                      {/* 課堂時間與費用說明 */}
                       <div style={{ fontSize: '12px', color: '#555', margin: '6px 0' }}>
                         📅 {item.date} {item.startTime || item.time}{item.endTime ? ` - ${item.endTime}` : ''} | 📍 {item.court}
                         <br />
-                        💰 課堂費: HK${item.coachFee} | 🏟️ 場地費: HK${item.courtFee}
+                        💰 課堂費: HK${item.coachFee}/{item.feeMode === 'per_person' ? '人' : '堂'} | 🏟️ 場地費: HK${item.courtFee}
                       </div>
 
                       {/* 圖案 */}
@@ -672,7 +692,7 @@
                         <button 
                           onClick={(e) => { e.stopPropagation(); addToAppleCalendar(item); }} 
                           style={{ padding: '6px 12px', backgroundColor: '#78c1cc', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                          🗓️️ 加入行事曆
+                          🗓 加入行事曆
                         </button>
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleCancelLesson(item.id); }} 
@@ -718,13 +738,13 @@
                 <div style={{ ...cardStyle, textAlign: 'center', color: '#999', padding: '20px' }}>此月份無課堂紀錄</div>
               ) : (
                 monthlySchedule.map(item => {
-                  const totalFee = (Number(item.coachFee) || 0) + (Number(item.courtFee) || 0);
+                  const totalFee = calculateTotalFee(item);
 
                   return (
                     <div key={item.id} style={{ ...cardStyle, borderLeft: '4px solid #5b8bf7' }}>
                       <div style={{ fontWeight: 'bold', fontSize: '14px' }}>🏸 {item.courseName} ({item.date} {item.startTime || item.time})</div>
                       <div style={{ fontSize: '12px', color: '#666', marginTop: '2px' }}>
-                        課堂費: HK${item.coachFee} + 場地費: HK${item.courtFee} = <strong style={{ color: '#2b580c' }}>總金額: HK${totalFee}</strong>
+                        模式: {item.feeMode === 'per_person' ? '按每人' : '按整堂'} | 課堂費: HK${item.coachFee} + 場地費: HK${item.courtFee} = <strong style={{ color: '#2b580c' }}>總金額: HK${totalFee}</strong>
                       </div>
                       
                       <div style={{ marginTop: '8px', borderTop: '1px dashed #eee', paddingTop: '6px' }}>
@@ -760,8 +780,6 @@
                   
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <input placeholder="電話 (例: 91234567)" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, flex: 1 }} />
-                    
-                    {/* 更新羽毛球分級選單 */}
                     <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={{ ...inputStyle, flex: 1 }}>
                       <option value="新手">新手</option>
                       <option value="近初">近初</option>
@@ -826,7 +844,7 @@
                     <div>
                       <strong>{c.name}</strong> (上限 {c.maxCapacity} 人)
                       <div style={{ fontSize: '11px', color: '#666' }}>
-                        課堂費: HK${c.defaultCoachFee} | 場地費: HK${c.defaultCourtFee} | <strong>總額: HK${(c.defaultCoachFee || 0) + (c.defaultCourtFee || 0)}</strong>
+                        模式: {c.feeMode === 'per_person' ? '每人收費' : '整堂收費'} | 課堂費: HK${c.defaultCoachFee} | 場地費: HK${c.defaultCourtFee}
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
@@ -835,6 +853,7 @@
                         setCourseTypeForm({
                           name: c.name,
                           maxCapacity: c.maxCapacity,
+                          feeMode: c.feeMode || 'per_person',
                           duration: '2小時',
                           defaultCoachFee: c.defaultCoachFee,
                           defaultCourtFee: c.defaultCourtFee
@@ -853,11 +872,21 @@
 
                   <input placeholder="預設課程名稱 (例: 2-4人小班)" value={courseTypeForm.name} onChange={e => setCourseTypeForm({...courseTypeForm, name: e.target.value})} required style={inputStyle} />
 
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '11px', color: '#666' }}>計費模式</label>
+                      <select value={courseTypeForm.feeMode} onChange={e => setCourseTypeForm({...courseTypeForm, feeMode: e.target.value})} style={inputStyle}>
+                        <option value="per_person">按每人收費</option>
+                        <option value="per_lesson">按整堂收費</option>
+                      </select>
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '11px', color: '#666' }}>人數上限</label>
-                      <input type="number" min="1" placeholder="人數上限" value={courseTypeForm.maxCapacity} onChange={e => setCourseTypeForm({...courseTypeForm, maxCapacity: e.target.value})} required style={inputStyle} />
+                      <input type="number" min="1" placeholder="人數" value={courseTypeForm.maxCapacity} onChange={e => setCourseTypeForm({...courseTypeForm, maxCapacity: e.target.value})} required style={inputStyle} />
                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '11px', color: '#666' }}>預設課堂費(HK$)</label>
                       <input type="number" placeholder="課堂費" value={courseTypeForm.defaultCoachFee} onChange={e => setCourseTypeForm({...courseTypeForm, defaultCoachFee: e.target.value})} required style={inputStyle} />
@@ -907,10 +936,11 @@
                 <div style={{ fontSize: '13px', color: '#444', lineHeight: '1.6', marginBottom: '12px' }}>
                   <div>📅 <strong>時間：</strong>{selectedLessonModal.date} {selectedLessonModal.startTime || selectedLessonModal.time}{selectedLessonModal.endTime ? ` - ${selectedLessonModal.endTime}` : ''}</div>
                   <div>📍 <strong>地點：</strong>{selectedLessonModal.court}</div>
-                  <div>💰 <strong>課堂費：</strong>HK${selectedLessonModal.coachFee}</div>
+                  <div>💰 <strong>計費模式：</strong>{selectedLessonModal.feeMode === 'per_person' ? '按每人收費' : '按整堂收費'}</div>
+                  <div>💰 <strong>課堂費：</strong>HK${selectedLessonModal.coachFee} /{selectedLessonModal.feeMode === 'per_person' ? '人' : '堂'}</div>
                   <div>🏟️ <strong>場地費：</strong>HK${selectedLessonModal.courtFee}</div>
                   <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#2b580c', marginTop: '4px' }}>
-                    💵 課堂總學費：HK${(Number(selectedLessonModal.coachFee) || 0) + (Number(selectedLessonModal.courtFee) || 0)}
+                    💵 預計總學費：HK${calculateTotalFee(selectedLessonModal)}
                   </div>
                 </div>
 
@@ -1004,6 +1034,7 @@
                         courseTypeId: '1',
                         courseName: selectedLessonModal.courseName,
                         maxCapacity: selectedLessonModal.maxCapacity,
+                        feeMode: selectedLessonModal.feeMode || 'per_person',
                         coachFee: selectedLessonModal.coachFee,
                         courtFee: selectedLessonModal.courtFee,
                         date: selectedLessonModal.date,
