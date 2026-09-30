@@ -16,8 +16,8 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v2.3.1";
-      const LAST_UPDATED = "2026-09-30 01:45";
+      const APP_VERSION = "v2.4.0";
+      const LAST_UPDATED = "2026-09-30 02:00";
 
       const todayStr = new Date().toISOString().split('T')[0];
       const currentMonthStr = todayStr.substring(0, 7);
@@ -107,6 +107,22 @@
         endTime: '21:00',
         court: ''
       });
+
+      // WhatsApp 導向工具函式
+      const openWhatsApp = (phone, message = '') => {
+        if (!phone) {
+          alert('⚠️ 該學員未填寫電話號碼！');
+          return;
+        }
+        // 清理電話號碼中的非數字字元
+        let cleanPhone = phone.replace(/\D/g, '');
+        // 香港預設加上 852 國碼（如果未填）
+        if (cleanPhone.length === 8) {
+          cleanPhone = '852' + cleanPhone;
+        }
+        const encodedMsg = encodeURIComponent(message);
+        window.open(`https://wa.me/${cleanPhone}?text=${encodedMsg}`, '_blank');
+      };
 
       // 計算未來 6 天日期範圍陣列
       const getNext6DaysRange = () => {
@@ -440,7 +456,7 @@
                     💡 應收總學費：HK$ {(Number(lessonForm.coachFee) || 0) + (Number(lessonForm.courtFee) || 0)}
                   </div>
 
-                  {/* 第一排：日期全寬 (避免原生的 input date 壓出螢幕) */}
+                  {/* 第一排：日期全寬 */}
                   <div>
                     <label style={{ fontSize: '11px', color: '#666' }}>日期</label>
                     <input type="date" value={lessonForm.date} onChange={e => {
@@ -450,7 +466,7 @@
                     }} required style={{ ...inputStyle, width: '100%' }} />
                   </div>
 
-                  {/* 第二排：開始時間 & 結束時間 (二分滿版) */}
+                  {/* 第二排：開始時間 & 結束時間 */}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '11px', color: '#666' }}>開始時間</label>
@@ -552,7 +568,7 @@
                         <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#2b580c' }}>總學費: HK$ {totalFee}</span>
                       </div>
 
-                      {/* 課堂時間完整顯示開始與結束時間 */}
+                      {/* 課堂時間 */}
                       <div style={{ fontSize: '12px', color: '#555', margin: '6px 0' }}>
                         📅 {item.date} {item.startTime || item.time}{item.endTime ? ` - ${item.endTime}` : ''} | 📍 {item.court}
                         <br />
@@ -676,13 +692,12 @@
                   <input placeholder="姓名" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} required style={inputStyle} />
                   
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <input placeholder="電話" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, flex: 1 }} />
+                    <input placeholder="電話 (例: 91234567)" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, flex: 1 }} />
                     <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={{ ...inputStyle, flex: 1 }}>
                       <option value="新手">新手</option>
-                      <option value="近初">近初</option>
                       <option value="初級">初級</option>
-                      <option value="初中">初中</option>
                       <option value="中級">中級</option>
+                      <option value="高級">高級</option>
                     </select>
                   </div>
 
@@ -712,6 +727,12 @@
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <strong>👤 {s.name} ({s.level || '初級'})</strong>
                     <div style={{ display: 'flex', gap: '6px' }}>
+                      {/* 綠色 WhatsApp 按鈕 */}
+                      <button 
+                        onClick={() => openWhatsApp(s.phone, `你好 ${s.name}，關於羽毛球課堂：`)} 
+                        style={{ padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                        💬 WhatsApp
+                      </button>
                       <button onClick={() => handleStartEditStudent(s)} style={{ padding: '4px 8px', backgroundColor: '#e0e0e0', color: '#333', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>✏️ 修改</button>
                       <button onClick={() => setStudents(students.filter(st => st.id !== s.id))} style={{ padding: '4px 8px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>刪除</button>
                     </div>
@@ -833,28 +854,43 @@
                   {selectedLessonModal.enrolledStudents.length === 0 ? (
                     <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>尚無學員，請在下方新增。</div>
                   ) : (
-                    selectedLessonModal.enrolledStudents.map((st, idx) => (
-                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '6px 8px', borderRadius: '6px', marginBottom: '6px', fontSize: '12px', border: '1px solid #eee' }}>
-                        <div>
-                          <strong>{st.name}</strong>
-                          <span style={{ marginLeft: '6px', fontSize: '11px', color: st.isPaid ? '#2e7d32' : '#c62828' }}>
-                            ({st.isPaid ? '已付' : '未付'})
-                          </span>
+                    selectedLessonModal.enrolledStudents.map((st, idx) => {
+                      // 尋找對應學員的電話號碼
+                      const matchedStudent = students.find(s => s.name === st.name);
+                      const phone = matchedStudent ? matchedStudent.phone : '';
+
+                      return (
+                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '6px 8px', borderRadius: '6px', marginBottom: '6px', fontSize: '12px', border: '1px solid #eee' }}>
+                          <div>
+                            <strong>{st.name}</strong>
+                            <span style={{ marginLeft: '4px', fontSize: '11px', color: st.isPaid ? '#2e7d32' : '#c62828' }}>
+                              ({st.isPaid ? '已付' : '未付'})
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', gap: '4px' }}>
+                            {/* 課堂彈窗 WhatsApp 按鈕 */}
+                            <button 
+                              onClick={() => {
+                                const msg = `你好 ${st.name}，關於預約在 ${selectedLessonModal.date} ${selectedLessonModal.startTime || selectedLessonModal.time} 的【${selectedLessonModal.courseName}】羽毛球課堂：`;
+                                openWhatsApp(phone, msg);
+                              }} 
+                              style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: '#25D366', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                              💬 WA
+                            </button>
+                            <button 
+                              onClick={() => handleTogglePaidStatus(st.name)} 
+                              style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: st.isPaid ? '#fabb6e' : '#4eac6d', color: '#fff', cursor: 'pointer' }}>
+                              {st.isPaid ? '設為未付' : '設為已付'}
+                            </button>
+                            <button 
+                              onClick={() => handleRemoveStudentFromLesson(st.name)} 
+                              style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: '#e57373', color: '#fff', cursor: 'pointer' }}>
+                              移除
+                            </button>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                          <button 
-                            onClick={() => handleTogglePaidStatus(st.name)} 
-                            style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: st.isPaid ? '#fabb6e' : '#4eac6d', color: '#fff', cursor: 'pointer' }}>
-                            {st.isPaid ? '設為未付' : '設為已付'}
-                          </button>
-                          <button 
-                            onClick={() => handleRemoveStudentFromLesson(st.name)} 
-                            style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: '#e57373', color: '#fff', cursor: 'pointer' }}>
-                            移除
-                          </button>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
 
                   {/* 新增學員介面 */}
