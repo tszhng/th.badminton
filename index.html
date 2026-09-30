@@ -16,11 +16,15 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v2.4.0";
-      const LAST_UPDATED = "2026-09-30 02:00";
+      const APP_VERSION = "v2.6.0";
+      const LAST_UPDATED = "2026-09-30 02:45";
 
-      const todayStr = new Date().toISOString().split('T')[0];
-      const currentMonthStr = todayStr.substring(0, 7);
+      // 取得今天的 YYYY-MM-DD 與 YYYY-MM
+      const getTodayString = () => new Date().toISOString().split('T')[0];
+      const getMonthString = (dateStr) => dateStr.substring(0, 7);
+
+      const todayStr = getTodayString();
+      const currentMonthStr = getMonthString(todayStr);
 
       // 1. 設定頁預設課程種類
       const [courseTypes, setCourseTypes] = useState(() => {
@@ -35,17 +39,17 @@
 
       const [editingCourseTypeId, setEditingCourseTypeId] = useState(null);
 
-      // 學員列表
+      // 學員列表（預設等級改為 新手/近初/初級/初中/中級）
       const [students, setStudents] = useState(() => {
         const saved = localStorage.getItem('th_badminton_students');
         return saved ? JSON.parse(saved) : [
-          { id: 1, name: '張小明', phone: '91234567', level: '初級', notes: '習慣右手，想練高遠球' },
-          { id: 2, name: '李阿華', phone: '98765432', level: '中級', notes: '主力練雙打平抽' }
+          { id: 1, name: '張小明', phone: '91234567', level: '近初', notes: '習慣右手，想練高遠球' },
+          { id: 2, name: '李阿華', phone: '98765432', level: '初中', notes: '主力練雙打平抽' }
         ];
       });
 
       const [searchQuery, setSearchQuery] = useState('');
-      const [studentForm, setStudentForm] = useState({ name: '', phone: '', level: '初級', notes: '' });
+      const [studentForm, setStudentForm] = useState({ name: '', phone: '', level: '新手', notes: '' });
       const [editingStudentId, setEditingStudentId] = useState(null);
 
       // 課表資料
@@ -63,18 +67,6 @@
             endTime: '20:00',
             court: '中山紀念公園體育館',
             enrolledStudents: [{ name: '張小明', isPaid: false }]
-          },
-          {
-            id: 2,
-            courseName: '2-4人小班',
-            maxCapacity: 4,
-            coachFee: 800,
-            courtFee: 200,
-            date: todayStr,
-            startTime: '10:00',
-            endTime: '12:00',
-            court: '九龍灣體育館',
-            enrolledStudents: [{ name: '李阿華', isPaid: true }]
           }
         ];
       });
@@ -90,6 +82,7 @@
       const [addStudentSelect, setAddStudentSelect] = useState('');
       const [addStudentCustom, setAddStudentCustom] = useState('');
 
+      // 預設選擇今天與當前月份
       const [selectedDate, setSelectedDate] = useState(todayStr);
       const [selectedMonth, setSelectedMonth] = useState(currentMonthStr);
 
@@ -108,23 +101,28 @@
         court: ''
       });
 
-      // WhatsApp 導向工具函式
+      // WhatsApp 導向工具
       const openWhatsApp = (phone, message = '') => {
         if (!phone) {
           alert('⚠️ 該學員未填寫電話號碼！');
           return;
         }
-        // 清理電話號碼中的非數字字元
         let cleanPhone = phone.replace(/\D/g, '');
-        // 香港預設加上 852 國碼（如果未填）
-        if (cleanPhone.length === 8) {
-          cleanPhone = '852' + cleanPhone;
-        }
+        if (cleanPhone.length === 8) cleanPhone = '852' + cleanPhone;
         const encodedMsg = encodeURIComponent(message);
         window.open(`https://wa.me/${cleanPhone}?text=${encodedMsg}`, '_blank');
       };
 
-      // 計算未來 6 天日期範圍陣列
+      // 計算 N 天後的日期字串
+      const getDateOffsetStr = (offsetDays) => {
+        const d = new Date();
+        d.setDate(d.getDate() + offsetDays);
+        return d.toISOString().split('T')[0];
+      };
+
+      const day7Str = getDateOffsetStr(7);
+
+      // 取得未來 6 天範圍陣列
       const getNext6DaysRange = () => {
         const range = [];
         const baseDate = new Date();
@@ -169,6 +167,10 @@
       };
 
       const daySchedule = schedule.filter(item => item.date === selectedDate);
+
+      // 提醒事項：今天課堂與 7 天後課堂
+      const todayLessons = schedule.filter(item => item.date === todayStr);
+      const day7Lessons = schedule.filter(item => item.date === day7Str);
 
       // 收入總額計算
       const monthlySchedule = schedule.filter(item => item.date.startsWith(selectedMonth));
@@ -311,7 +313,7 @@
         } else {
           setStudents([...students, { ...studentForm, id: Date.now() }]);
         }
-        setStudentForm({ name: '', phone: '', level: '初級', notes: '' });
+        setStudentForm({ name: '', phone: '', level: '新手', notes: '' });
       };
 
       const handleStartEditStudent = (s) => {
@@ -319,7 +321,7 @@
         setStudentForm({
           name: s.name || '',
           phone: s.phone || '',
-          level: s.level || '初級',
+          level: s.level || '新手',
           notes: s.notes || ''
         });
       };
@@ -396,6 +398,64 @@
           {/* TAB 1: 課表 */}
           {activeTab === 'schedule' && (
             <div>
+
+              {/* 🔔 今日與預訂提醒通知區塊 */}
+              <div style={{ ...cardStyle, borderLeft: '5px solid #ff9800', backgroundColor: '#fffde7' }}>
+                <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#e65100', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>🔔 今日與 7 天後課堂提醒</span>
+                  <span style={{ fontSize: '11px', color: '#888' }}>{todayStr}</span>
+                </div>
+
+                {/* 今日課節提醒 */}
+                <div style={{ fontSize: '12px', color: '#333', marginBottom: '8px' }}>
+                  <strong>📍 今日上課通知 ({todayLessons.length} 堂)：</strong>
+                  {todayLessons.length === 0 ? (
+                    <div style={{ color: '#777', marginTop: '2px' }}>今天沒有排課</div>
+                  ) : (
+                    todayLessons.map(item => (
+                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', padding: '4px 6px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #ffe082' }}>
+                        <span>🏸 {item.courseName} ({item.startTime})</span>
+                        <button 
+                          onClick={() => {
+                            if (item.enrolledStudents.length === 0) { alert('該課堂尚未有學員'); return; }
+                            const firstSt = item.enrolledStudents[0];
+                            const match = students.find(s => s.name === firstSt.name);
+                            openWhatsApp(match ? match.phone : '', `你好 ${firstSt.name}，提醒你今天 ${item.startTime} 在【${item.court || '體育館'}】有羽毛球課堂，請準時出席！🏸`);
+                          }}
+                          style={{ padding: '2px 6px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                          💬 提醒今日上課
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* 7 天後課節提醒 (Book 場提醒) */}
+                <div style={{ fontSize: '12px', color: '#333' }}>
+                  <strong>📆 7 天後課堂 / Book 場提醒 ({day7Str})：</strong>
+                  {day7Lessons.length === 0 ? (
+                    <div style={{ color: '#777', marginTop: '2px' }}>7天後 ({day7Str}) 無安排課堂</div>
+                  ) : (
+                    day7Lessons.map(item => (
+                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', padding: '4px 6px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #ffe082' }}>
+                        <span>🏸 {item.courseName} ({item.startTime})</span>
+                        <button 
+                          onClick={() => {
+                            if (item.enrolledStudents.length === 0) { alert('該課堂尚未有學員'); return; }
+                            const firstSt = item.enrolledStudents[0];
+                            const match = students.find(s => s.name === firstSt.name);
+                            openWhatsApp(match ? match.phone : '', `你好 ${firstSt.name}，關於下週 ${day7Str} ${item.startTime} 的羽毛球課堂，我將會幫你預訂場地/確認安排！🏸`);
+                          }}
+                          style={{ padding: '2px 6px', backgroundColor: '#0088cc', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                          💬 提醒預訂/確認
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* 排課/修改表單 */}
               <div style={{ ...cardStyle, border: editingLessonId ? '2px solid #e6c260' : '1px solid #eee' }}>
                 <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>{editingLessonId ? '✏️ 修改/改期課堂' : '➕ 新增預約課堂'}</h3>
                 <form onSubmit={handleSaveLesson} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -456,7 +516,7 @@
                     💡 應收總學費：HK$ {(Number(lessonForm.coachFee) || 0) + (Number(lessonForm.courtFee) || 0)}
                   </div>
 
-                  {/* 第一排：日期全寬 */}
+                  {/* 日期全寬 */}
                   <div>
                     <label style={{ fontSize: '11px', color: '#666' }}>日期</label>
                     <input type="date" value={lessonForm.date} onChange={e => {
@@ -466,7 +526,7 @@
                     }} required style={{ ...inputStyle, width: '100%' }} />
                   </div>
 
-                  {/* 第二排：開始時間 & 結束時間 */}
+                  {/* 開始時間 & 結束時間 */}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '11px', color: '#666' }}>開始時間</label>
@@ -493,7 +553,12 @@
 
               {/* 月曆 */}
               <div style={{ ...cardStyle, padding: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginBottom: '8px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <button 
+                    onClick={() => { setSelectedDate(todayStr); setSelectedMonth(currentMonthStr); }} 
+                    style={{ padding: '4px 8px', fontSize: '12px', backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    📍 回到今天
+                  </button>
                   <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #ccc' }} />
                 </div>
 
@@ -505,6 +570,7 @@
                   {getFull6WeeksGrid(selectedMonth).map(({ dateStr, dayNum, isCurrentMonth }) => {
                     const hasLesson = schedule.some(s => s.date === dateStr);
                     const isSelected = dateStr === selectedDate;
+                    const isToday = dateStr === todayStr;
                     const isNext6Days = next6DaysList.includes(dateStr);
                     const isSixthDay = dateStr === sixthDayStr;
 
@@ -533,8 +599,9 @@
                         style={{ 
                           height: '36px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
                           borderRadius: '8px', backgroundColor: bgColor, color: textColor, fontSize: '13px', 
-                          fontWeight: isSelected || isNext6Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
-                          opacity: isCurrentMonth ? 1 : 0.65
+                          fontWeight: isSelected || isToday || isNext6Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
+                          opacity: isCurrentMonth ? 1 : 0.65,
+                          border: isToday && !isSelected ? '2px solid #5b8bf7' : 'none'
                         }}>
                         {dayNum}
                         {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSixthDay ? '#fff' : '#e57373', position: 'absolute', bottom: '3px' }} />}
@@ -605,7 +672,7 @@
                         <button 
                           onClick={(e) => { e.stopPropagation(); addToAppleCalendar(item); }} 
                           style={{ padding: '6px 12px', backgroundColor: '#78c1cc', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                          🗓️ 加入行事曆
+                          🗓️️ 加入行事曆
                         </button>
                         <button 
                           onClick={(e) => { e.stopPropagation(); handleCancelLesson(item.id); }} 
@@ -693,11 +760,14 @@
                   
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <input placeholder="電話 (例: 91234567)" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, flex: 1 }} />
+                    
+                    {/* 更新羽毛球分級選單 */}
                     <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={{ ...inputStyle, flex: 1 }}>
                       <option value="新手">新手</option>
+                      <option value="近初">近初</option>
                       <option value="初級">初級</option>
+                      <option value="初中">初中</option>
                       <option value="中級">中級</option>
-                      <option value="高級">高級</option>
                     </select>
                   </div>
 
@@ -715,7 +785,7 @@
                     {editingStudentId && (
                       <button type="button" onClick={() => {
                         setEditingStudentId(null);
-                        setStudentForm({ name: '', phone: '', level: '初級', notes: '' });
+                        setStudentForm({ name: '', phone: '', level: '新手', notes: '' });
                       }} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px' }}>取消</button>
                     )}
                   </div>
@@ -725,9 +795,8 @@
               {students.filter(s => s.name.includes(searchQuery)).map(s => (
                 <div key={s.id} style={cardStyle}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <strong>👤 {s.name} ({s.level || '初級'})</strong>
+                    <strong>👤 {s.name} ({s.level || '新手'})</strong>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      {/* 綠色 WhatsApp 按鈕 */}
                       <button 
                         onClick={() => openWhatsApp(s.phone, `你好 ${s.name}，關於羽毛球課堂：`)} 
                         style={{ padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
@@ -855,7 +924,6 @@
                     <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>尚無學員，請在下方新增。</div>
                   ) : (
                     selectedLessonModal.enrolledStudents.map((st, idx) => {
-                      // 尋找對應學員的電話號碼
                       const matchedStudent = students.find(s => s.name === st.name);
                       const phone = matchedStudent ? matchedStudent.phone : '';
 
@@ -868,7 +936,6 @@
                             </span>
                           </div>
                           <div style={{ display: 'flex', gap: '4px' }}>
-                            {/* 課堂彈窗 WhatsApp 按鈕 */}
                             <button 
                               onClick={() => {
                                 const msg = `你好 ${st.name}，關於預約在 ${selectedLessonModal.date} ${selectedLessonModal.startTime || selectedLessonModal.time} 的【${selectedLessonModal.courseName}】羽毛球課堂：`;
