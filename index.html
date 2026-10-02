@@ -16,7 +16,7 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v3.8.0";
+      const APP_VERSION = "v3.9.0";
       const LAST_UPDATED = "2026-10-02 15:30";
 
       const getRealTodayString = () => {
@@ -36,6 +36,16 @@
       // 隱藏/顯示金額狀態（預設隱藏）
       const [showAmount, setShowAmount] = useState(false);
       const [activeTab, setActiveTab] = useState('schedule');
+
+      // 記錄場地費墊支人分組折疊狀態
+      const [expandedPayers, setExpandedPayers] = useState({});
+
+      const togglePayerExpand = (payerName) => {
+        setExpandedPayers(prev => ({
+          ...prev,
+          [payerName]: !prev[payerName]
+        }));
+      };
 
       // 離開收支頁面時自動隱藏金額
       useEffect(() => {
@@ -273,6 +283,27 @@
       });
 
       const netProfit = totalIncome - totalExpense;
+
+      // 按墊支人分組計算支出明細
+      const groupedCourtFees = monthlySchedule
+        .filter(item => (Number(item.courtFee) || 0) > 0)
+        .reduce((acc, item) => {
+          let rawPayer = (item.courtPayer || '').trim();
+          let payerKey = (!rawPayer || rawPayer === '待定' || rawPayer === '未定' || rawPayer === '未填寫') ? '待定' : rawPayer;
+          
+          if (!acc[payerKey]) {
+            acc[payerKey] = { payerName: payerKey, total: 0, items: [] };
+          }
+          acc[payerKey].total += Number(item.courtFee) || 0;
+          acc[payerKey].items.push(item);
+          return acc;
+        }, {});
+
+      const sortedPayerGroups = Object.values(groupedCourtFees).sort((a, b) => {
+        if (a.payerName === '待定') return 1;
+        if (b.payerName === '待定') return -1;
+        return a.payerName.localeCompare(b.payerName, 'zh-HK');
+      });
 
       const handleCancelLesson = (lessonId) => {
         if (window.confirm("⚠️ 確定要取消這堂課嗎？所有學員紀錄將會移除。")) {
@@ -754,32 +785,98 @@
                 </div>
               </div>
 
-              {/* 新增：支出明細模組列表 */}
-              <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px', color: '#555' }}>
-                💸 支出明細 (場地費列表) ({selectedMonth})：
+              {/* 支出明細：按墊支人折疊展開的表格組件 */}
+              <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px', color: '#555', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>💸 支出明細 (按墊支人分類) ({selectedMonth})：</span>
+                <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal' }}>💡 點擊即可展開/折疊表格</span>
               </div>
 
-              <div style={{ ...cardStyle, padding: '8px 12px' }}>
-                {monthlySchedule.filter(item => (Number(item.courtFee) || 0) > 0).length === 0 ? (
-                  <div style={{ color: '#888', fontSize: '12px', textAlign: 'center', padding: '10px' }}>本月份無場地費支出紀錄</div>
+              <div style={{ marginBottom: '15px' }}>
+                {sortedPayerGroups.length === 0 ? (
+                  <div style={{ ...cardStyle, color: '#888', fontSize: '12px', textAlign: 'center', padding: '15px' }}>本月份無場地費支出紀錄</div>
                 ) : (
-                  monthlySchedule
-                    .filter(item => (Number(item.courtFee) || 0) > 0)
-                    .map(item => (
-                      <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px dashed #eee', fontSize: '13px' }}>
-                        <div>
-                          <div style={{ fontWeight: 'bold', color: '#c62828' }}>
-                            🏟️ {item.court || '體育館'} ({item.courseName})
+                  sortedPayerGroups.map(group => {
+                    const isPending = group.payerName === '待定';
+                    const isExpanded = !!expandedPayers[group.payerName];
+
+                    return (
+                      <div key={group.payerName} style={{ ...cardStyle, padding: '0', overflow: 'hidden', borderLeft: isPending ? '5px solid #ff9800' : '5px solid #1976d2', marginBottom: '10px' }}>
+                        {/* 折疊標頭 */}
+                        <div 
+                          onClick={() => togglePayerExpand(group.payerName)}
+                          style={{ 
+                            padding: '12px', 
+                            display: 'flex', 
+                            justify: 'space-between', 
+                            alignItems: 'center', 
+                            cursor: 'pointer', 
+                            backgroundColor: isPending ? '#fff8e1' : '#fff',
+                            userSelect: 'none'
+                          }}>
+                          <div>
+                            <span style={{ fontWeight: 'bold', fontSize: '14px', color: isPending ? '#e65100' : '#333' }}>
+                              👤 墊支人：{group.payerName}
+                            </span>
+                            {isPending && (
+                              <span style={{ marginLeft: '6px', fontSize: '10px', backgroundColor: '#ffe082', color: '#e65100', padding: '2px 5px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                ⚠️ 需跟進
+                              </span>
+                            )}
+                            <div style={{ fontSize: '11px', color: '#777', marginTop: '2px' }}>
+                              共 {group.items.length} 筆場地預訂紀錄
+                            </div>
                           </div>
-                          <div style={{ fontSize: '11px', color: '#777', marginTop: '2px' }}>
-                            📅 {item.date} {item.startTime} | 墊付人: <strong>{item.courtPayer || 'TH Coach'}</strong>
+
+                          <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#c62828' }}>
+                              {formatAmount(group.total)}
+                            </span>
+                            <span style={{ fontSize: '12px', color: '#999', transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                              ▼
+                            </span>
                           </div>
                         </div>
-                        <div style={{ textAlign: 'right', fontWeight: 'bold', color: '#c62828' }}>
-                          -{formatAmount(item.courtFee)}
-                        </div>
+
+                        {/* 展開之表格內容 */}
+                        {isExpanded && (
+                          <div style={{ borderTop: '1px solid #eee', backgroundColor: '#fafafa', padding: '10px' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left' }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid #ddd', color: '#666', fontSize: '11px' }}>
+                                  <th style={{ padding: '6px 4px' }}>日期</th>
+                                  <th style={{ padding: '6px 4px' }}>時間</th>
+                                  <th style={{ padding: '6px 4px' }}>場地 (課程)</th>
+                                  <th style={{ padding: '6px 4px', textAlign: 'right' }}>價錢</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {group.items.map(item => (
+                                  <tr 
+                                    key={item.id} 
+                                    onDoubleClick={() => setSelectedLessonModal(item)}
+                                    style={{ borderBottom: '1px dashed #eee', cursor: 'pointer' }}
+                                    title="雙擊編輯此課堂/修改墊支人">
+                                    <td style={{ padding: '6px 4px', color: '#333' }}>{item.date.substring(5)}</td>
+                                    <td style={{ padding: '6px 4px', color: '#555' }}>{item.startTime}</td>
+                                    <td style={{ padding: '6px 4px' }}>
+                                      <strong style={{ color: '#1565c0' }}>{item.court || '體育館'}</strong>
+                                      <div style={{ fontSize: '10px', color: '#888' }}>{item.courseName}</div>
+                                    </td>
+                                    <td style={{ padding: '6px 4px', textAlign: 'right', fontWeight: 'bold', color: '#c62828' }}>
+                                      {formatAmount(item.courtFee)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div style={{ fontSize: '10px', color: '#888', marginTop: '6px', textAlign: 'right' }}>
+                              💡 雙擊表格列可直接編輯課堂與重新指派墊支人
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    ))
+                    );
+                  })
                 )}
               </div>
 
@@ -909,7 +1006,7 @@
 
                 <form onSubmit={handleSaveCourseType} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', borderTop: '1px dashed #ccc', paddingTop: '10px' }}>
                   <div style={{ fontWeight: 'bold', fontSize: '13px' }}>
-                    {editingCourseTypeId ? '✏️️ 修改預設課程：' : '➕ 新增預設課程：'}
+                    {editingCourseTypeId ? '✏ 修改預設課程：' : '➕ 新增預設課程：'}
                   </div>
 
                   <input placeholder="預設課程名稱 (例: 2-4人小班)" value={courseTypeForm.name} onChange={e => setCourseTypeForm({...courseTypeForm, name: e.target.value})} required style={inputStyle} />
@@ -1079,7 +1176,7 @@
               <div style={{ backgroundColor: '#fff', padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
                   <h3 style={{ margin: 0, fontSize: '16px' }}>✏️ 修改學員資料</h3>
-                  <button onClick={() => setShowEditStudentModal(false)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖️️</button>
+                  <button onClick={() => setShowEditStudentModal(false)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖</button>
                 </div>
 
                 <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1199,7 +1296,7 @@
 
                   <div>
                     <label style={{ fontSize: '11px', color: '#666' }}>場地費墊付人</label>
-                    <input placeholder="例如: TH Coach" value={lessonForm.courtPayer} onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} style={inputStyle} />
+                    <input placeholder="例如: TH Coach (填寫「待定」方便後續指派)" value={lessonForm.courtPayer} onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} style={inputStyle} />
                   </div>
 
                   <div>
@@ -1242,7 +1339,7 @@
             <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '15px' }}>
               <div style={{ backgroundColor: '#fff', padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px' }}>✏️️ 修改課堂</h3>
+                  <h3 style={{ margin: 0, fontSize: '16px' }}>✏ 修改課堂</h3>
                   <button onClick={() => setShowEditModal(false)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖️</button>
                 </div>
 
@@ -1281,7 +1378,7 @@
 
                   <div>
                     <label style={{ fontSize: '11px', color: '#666' }}>場地費墊付人</label>
-                    <input placeholder="例如: TH Coach" value={lessonForm.courtPayer} onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} style={inputStyle} />
+                    <input placeholder="例如: TH Coach (可設為「待定」)" value={lessonForm.courtPayer} onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} style={inputStyle} />
                   </div>
 
                   <div>
@@ -1322,7 +1419,7 @@
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
                   <h3 style={{ margin: 0, fontSize: '16px' }}>🏸 {selectedLessonModal.courseName} 詳情</h3>
-                  <button onClick={() => setSelectedLessonModal(null)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖️</button>
+                  <button onClick={() => setSelectedLessonModal(null)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖️️</button>
                 </div>
 
                 <div style={{ fontSize: '13px', color: '#444', lineHeight: '1.6', marginBottom: '12px' }}>
@@ -1330,7 +1427,7 @@
                   <div>📍 <strong>地點：</strong>{selectedLessonModal.court}</div>
                   <div>💰 <strong>計費模式：</strong>{selectedLessonModal.feeMode === 'per_person' ? '按每人收費' : '按整堂收費'}</div>
                   <div>💰 <strong>課堂費：</strong>HK${selectedLessonModal.coachFee} /{selectedLessonModal.feeMode === 'per_person' ? '人' : '堂'}</div>
-                  <div>🏟 <strong>場地費：</strong>HK${selectedLessonModal.courtFee} ({selectedLessonModal.courtPayer || 'TH Coach'})</div>
+                  <div>🏟 <strong>場地費：</strong>HK${selectedLessonModal.courtFee} ({selectedLessonModal.courtPayer || '待定'})</div>
                   <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#2b580c', marginTop: '4px' }}>
                     💵 預計總學費：HK${calculateTotalFee(selectedLessonModal)}
                   </div>
@@ -1422,7 +1519,7 @@
                       </button>
                     </div>
                   ) : (
-                    <div style={{ fontSize: '12px', color: '#e57373', marginTop: '6px', textAlign: 'center' }}>⚠️ 人數已滿（上限 {selectedLessonModal.maxCapacity} 人）</div>
+                    <div style={{ fontSize: '12px', color: '#e57373', marginTop: '6px', textAlign: 'center' }}>⚠️️ 人數已滿（上限 {selectedLessonModal.maxCapacity} 人）</div>
                   )}
                 </div>
 
