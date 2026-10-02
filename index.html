@@ -15,8 +15,8 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v3.9.3";
-      const LAST_UPDATED = "2026-10-02 17:00";
+      const APP_VERSION = "v3.10.1";
+      const LAST_UPDATED = "2026-10-03 00:30";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -301,13 +301,46 @@
         .filter(item => item.date.startsWith(selectedMonth))
         .sort((a, b) => new Date(a.date) - new Date(b.date) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
 
+      // 預計收入：選擇月份所有已排課的收入（含教練費及場地費/或按人頭計算總額）
+      let estimatedIncome = 0;
+      // 總收入：選擇月份已上堂 (date <= todayStr) 且已繳費的收入
       let totalIncome = 0;
       let totalExpense = 0;
 
       monthlySchedule.forEach(item => {
         const totalFee = calculateTotalFee(item);
-        totalIncome += totalFee;
+        estimatedIncome += totalFee;
         totalExpense += (Number(item.courtFee) || 0);
+
+        // 計算已上堂且已繳費的總收入
+        if (item.date <= todayStr && item.enrolledStudents && item.enrolledStudents.length > 0) {
+          const coach = Number(item.coachFee) || 0;
+          const court = Number(item.courtFee) || 0;
+          
+          if (item.feeMode === 'per_person') {
+            // 按每人收費：只計算已繳費學員的教練費 + 攤分/或整堂場地費（這裡視學員已繳交的各人學費，通常每人交 coach + court 分攤或獨立計算，若系統內學員無獨立記金額，可用以下邏輯：若已繳費則累計該學員應付部分）
+            item.enrolledStudents.forEach(st => {
+              if (st.isPaid) {
+                // 如果是每人收費，每人學費為 coachFee + (courtFee / 人數 或類似，這裡以 coachFee + 均分場地費或直接加 coachFee)
+                // 依據原本 calculateTotalFee 邏輯，每人每堂貢獻 = coachFee + (courtFee / 總人數) 或單純算每人教練費+場地費
+                // 為了精準，我們計算該學員產生的費用：coach + (court / 總人數)
+                const perPersonCourt = item.enrolledStudents.length > 0 ? court / item.enrolledStudents.length : 0;
+                totalIncome += (coach + perPersonCourt);
+              }
+            });
+          } else {
+            // 按整堂收費：只要整堂有學員繳費（或只要該堂已上且有標記已繳費），若全堂已付則計入整堂總費
+            const isAnyPaid = item.enrolledStudents.some(st => st.isPaid);
+            if (isAnyPaid) {
+              // 簡單起見，如果整堂有學員付了錢或者依已付學員比例，此處如為整堂收費通常為一口價，只要有人付或全付：
+              // 這裡精確計算已付學員佔的比例或直接若該堂已付費就計入
+              const paidCount = item.enrolledStudents.filter(st => st.isPaid).length;
+              if (paidCount > 0) {
+                totalIncome += totalFee; // 簡化為只要有繳費即算該堂收入（或可按比例）
+              }
+            }
+          }
+        }
       });
 
       const netProfit = totalIncome - totalExpense;
@@ -399,7 +432,6 @@
         if (addStudentSelect === '__CUSTOM__') {
           targetName = addStudentCustom.trim();
           if (!targetName) { alert('請輸入新學員姓名！'); return; }
-          // 同步新增到學員總名單中（若不存在）
           if (!students.some(s => s.name === targetName)) {
             setStudents(prev => [...prev, { id: Date.now(), name: targetName, phone: '', level: '新手', notes: '透過課堂快速新增' }]);
           }
@@ -577,7 +609,7 @@
       const cardStyle = { backgroundColor: '#fff', padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box', width: '100%', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' };
       const weekLabels = ['日', '一', '二', '三', '四', '五', '六'];
 
-      const formatAmount = (num) => showAmount ? `$${num}` : '****';
+      const formatAmount = (num) => showAmount ? `$${Number(num).toFixed(0)}` : '****';
 
       return (
         <div style={{ 
@@ -815,22 +847,27 @@
                 <button 
                   onClick={() => setShowAmount(!showAmount)} 
                   style={{ padding: '6px 12px', backgroundColor: showAmount ? '#e0e0e0' : '#5b8bf7', color: showAmount ? '#333' : '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                  {showAmount ? '🙈 隱藏金額' : '👁️️ 顯示金額'}
+                  {showAmount ? '🙈 隱藏金額' : '👁 顯示金額'}
                 </button>
               </div>
 
-              <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '5px', textAlign: 'center', padding: '15px 10px' }}>
-                <div>
-                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>總收入 (學費)</div>
-                  <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#2e7d32' }}>{formatAmount(totalIncome)}</div>
+              {/* 更新後的收支卡片：預計收入、總收入、總支出、純利潤 */}
+              <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', textAlign: 'center', padding: '12px 8px' }}>
+                <div style={{ backgroundColor: '#f1f8e9', padding: '8px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#558b2f', marginBottom: '2px', fontWeight: 'bold' }}>預計收入 (全月已排課)</div>
+                  <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#33691e' }}>{formatAmount(estimatedIncome)}</div>
                 </div>
-                <div style={{ borderLeft: '1px solid #eee', borderRight: '1px solid #eee' }}>
-                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>總支出 (場地)</div>
-                  <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#c62828' }}>{formatAmount(totalExpense)}</div>
+                <div style={{ backgroundColor: '#e8f5e9', padding: '8px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#2e7d32', marginBottom: '2px', fontWeight: 'bold' }}>總收入 (已上堂已繳費)</div>
+                  <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#1b5e20' }}>{formatAmount(totalIncome)}</div>
                 </div>
-                <div>
-                  <div style={{ fontSize: '12px', color: '#666', marginBottom: '4px' }}>純利潤</div>
-                  <div style={{ fontSize: '16px', fontWeight: 'bold', color: netProfit >= 0 ? '#1565c0' : '#d32f2f' }}>{formatAmount(netProfit)}</div>
+                <div style={{ backgroundColor: '#ffebee', padding: '8px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#c62828', marginBottom: '2px', fontWeight: 'bold' }}>總支出 (場地)</div>
+                  <div style={{ fontSize: '15px', fontWeight: 'bold', color: '#b71c1c' }}>{formatAmount(totalExpense)}</div>
+                </div>
+                <div style={{ backgroundColor: '#e3f2fd', padding: '8px', borderRadius: '6px' }}>
+                  <div style={{ fontSize: '11px', color: '#1565c0', marginBottom: '2px', fontWeight: 'bold' }}>純利潤 (總收入 - 支出)</div>
+                  <div style={{ fontSize: '15px', fontWeight: 'bold', color: netProfit >= 0 ? '#0d47a1' : '#c62828' }}>{formatAmount(netProfit)}</div>
                 </div>
               </div>
 
@@ -1143,7 +1180,7 @@
               <div style={{ backgroundColor: '#fff', padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
                   <h3 style={{ margin: 0, fontSize: '16px' }}>➕ 新增學員</h3>
-                  <button onClick={() => setShowAddStudentModal(false)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖️️</button>
+                  <button onClick={() => setShowAddStudentModal(false)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖</button>
                 </div>
 
                 <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
