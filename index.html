@@ -16,8 +16,8 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v3.2.0";
-      const LAST_UPDATED = "2026-10-01 07:35";
+      const APP_VERSION = "v3.4.0";
+      const LAST_UPDATED = "2026-10-02 11:15";
 
       // 取得當前真實日期的工具函式 (格式: YYYY-MM-DD)
       const getRealTodayString = () => {
@@ -35,7 +35,7 @@
       const [selectedDate, setSelectedDate] = useState(todayStr);
       const [selectedMonth, setSelectedMonth] = useState(getMonthString(todayStr));
 
-      // 每分鐘自動檢查一次日期，確保跨日或頁面長期開啟時日期會自動跳轉更新
+      // 每分鐘自動檢查一次日期
       useEffect(() => {
         const interval = setInterval(() => {
           const currentRealToday = getRealTodayString();
@@ -135,6 +135,27 @@
         ).length;
       };
 
+      // 時間轉換工具
+      const timeToMinutes = (timeStr) => {
+        if (!timeStr) return 0;
+        const [h, m] = timeStr.split(':').map(Number);
+        return h * 60 + m;
+      };
+
+      // 檢查某課堂是否與同天的其他課堂時間重疊
+      const isLessonOverlapped = (currentLesson, dayLessons) => {
+        const startA = timeToMinutes(currentLesson.startTime || currentLesson.time);
+        const endA = timeToMinutes(currentLesson.endTime) || (startA + 60);
+
+        return dayLessons.some(other => {
+          if (other.id === currentLesson.id) return false;
+          const startB = timeToMinutes(other.startTime || other.time);
+          const endB = timeToMinutes(other.endTime) || (startB + 60);
+
+          return startA < endB && startB < endA;
+        });
+      };
+
       // 開啟新增課堂 Modal
       const handleOpenAddModal = () => {
         const defaultType = courseTypes[0] || { id: '1', name: '1人私教', maxCapacity: 1, feeMode: 'per_lesson', defaultCoachFee: 500, defaultCourtFee: 150 };
@@ -230,7 +251,11 @@
         return days;
       };
 
-      const daySchedule = schedule.filter(item => item.date === selectedDate);
+      // 當日課節列表（已依時間排序）
+      const daySchedule = schedule
+        .filter(item => item.date === selectedDate)
+        .sort((a, b) => timeToMinutes(a.startTime || a.time) - timeToMinutes(b.startTime || b.time));
+
       const todayLessons = schedule.filter(item => item.date === todayStr);
       const day7Lessons = schedule.filter(item => item.date === day7Str);
 
@@ -326,6 +351,17 @@
         const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
         setSchedule(schedule.map(s => s.id === updatedLesson.id ? updatedLesson : s));
         setSelectedLessonModal(updatedLesson);
+      };
+
+      // 雙擊學員名稱，前往學員詳情 Modal
+      const handleOpenStudentModalByName = (studentName) => {
+        const found = students.find(s => s.name === studentName);
+        if (found) {
+          setSelectedStudentModal(found);
+        } else {
+          // 若學員庫找不到該名字，開啟預設資料彈窗
+          setSelectedStudentModal({ id: Date.now(), name: studentName, phone: '', level: '新手', notes: '未在學員名單中登記完整資料' });
+        }
       };
 
       const handleRenewLesson = (item) => {
@@ -530,7 +566,7 @@
                       setSelectedMonth(getMonthString(realToday)); 
                     }} 
                     style={{ padding: '4px 8px', fontSize: '12px', backgroundColor: '#e8f5e9', color: '#2e7d32', border: '1px solid #c8e6c9', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                    📍 回到今天
+                    📍 今天
                   </button>
                   <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #ccc' }} />
                 </div>
@@ -591,7 +627,7 @@
                 ➕ 新增預約課堂
               </button>
 
-              {/* 每日課程列表 */}
+              {/* 每日課程列表（已按時間排序） */}
               <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px', color: '#555', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span>📌 {selectedDate} 的課節 ({daySchedule.length})：</span>
                 <span style={{ fontSize: '11px', color: '#888', fontWeight: 'normal' }}>💡 雙擊卡片加人/管理</span>
@@ -603,20 +639,39 @@
                 daySchedule.map(item => {
                   const enrolledCount = item.enrolledStudents.length;
                   const totalFee = calculateTotalFee(item);
+                  const overlapped = isLessonOverlapped(item, daySchedule);
 
                   return (
                     <div 
                       key={item.id} 
                       onDoubleClick={() => setSelectedLessonModal(item)}
-                      style={{ ...cardStyle, borderLeft: '5px solid #5b8bf7', cursor: 'pointer', userSelect: 'none' }}>
+                      style={{ 
+                        ...cardStyle, 
+                        borderLeft: overlapped ? '5px solid #d32f2f' : '5px solid #5b8bf7', 
+                        backgroundColor: overlapped ? '#ffebee' : '#fff',
+                        cursor: 'pointer', 
+                        userSelect: 'none',
+                        position: 'relative'
+                      }}>
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <strong style={{ fontSize: '15px' }}>🏸 {item.courseName}</strong>
-                        <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#2b580c' }}>預計學費: HK$ {totalFee}</span>
+                        <strong style={{ fontSize: '15px', color: overlapped ? '#c62828' : '#333' }}>
+                          🏸 {item.courseName}
+                        </strong>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          {overlapped && (
+                            <span style={{ fontSize: '11px', backgroundColor: '#d32f2f', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                              ⚠️ 時間重疊
+                            </span>
+                          )}
+                          <span style={{ fontSize: '13px', fontWeight: 'bold', color: '#2b580c' }}>
+                            預計學費: HK$ {totalFee}
+                          </span>
+                        </div>
                       </div>
 
-                      <div style={{ fontSize: '12px', color: '#555', margin: '6px 0' }}>
-                        📅 {item.date} {item.startTime || item.time}{item.endTime ? ` - ${item.endTime}` : ''} | 📍 {item.court}
+                      <div style={{ fontSize: '12px', color: overlapped ? '#b71c1c' : '#555', margin: '6px 0' }}>
+                        📅 {item.date} <strong>{item.startTime || item.time}{item.endTime ? ` - ${item.endTime}` : ''}</strong> | 📍 {item.court}
                         <br />
                         💰 課堂費: HK${item.coachFee}/{item.feeMode === 'per_person' ? '人' : '堂'} | 🏟️ 場地費: HK${item.courtFee}
                       </div>
@@ -926,7 +981,7 @@
 
           {/* MODAL 2: 學員詳情彈窗 */}
           {selectedStudentModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '15px' }}>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2200, padding: '15px' }}>
               <div style={{ backgroundColor: '#fff', padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
                 
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
@@ -980,7 +1035,7 @@
 
           {/* MODAL 3: 修改學員彈窗 */}
           {showEditStudentModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '15px' }}>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2300, padding: '15px' }}>
               <div style={{ backgroundColor: '#fff', padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
                   <h3 style={{ margin: 0, fontSize: '16px' }}>✏️ 修改學員資料</h3>
@@ -1233,48 +1288,47 @@
 
                 {/* 學員管理區 */}
                 <div style={{ backgroundColor: '#f8f9fa', padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
-                  <h4 style={{ margin: '0 0 8px 0', fontSize: '14px' }}>
-                    👥 學員名單 ({selectedLessonModal.enrolledStudents.length} / {selectedLessonModal.maxCapacity}人)
-                  </h4>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h4 style={{ margin: 0, fontSize: '14px' }}>
+                      👥 學員名單 ({selectedLessonModal.enrolledStudents.length} / {selectedLessonModal.maxCapacity}人)
+                    </h4>
+                    <span style={{ fontSize: '10px', color: '#888' }}>💡 雙擊學員列可開啟詳情/修改</span>
+                  </div>
                   
                   {selectedLessonModal.enrolledStudents.length === 0 ? (
                     <div style={{ fontSize: '12px', color: '#888', marginBottom: '8px' }}>尚無學員，請在下方新增。</div>
                   ) : (
-                    selectedLessonModal.enrolledStudents.map((st, idx) => {
-                      const matchedStudent = students.find(s => s.name === st.name);
-                      const phone = matchedStudent ? matchedStudent.phone : '';
-
-                      return (
-                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', padding: '6px 8px', borderRadius: '6px', marginBottom: '6px', fontSize: '12px', border: '1px solid #eee' }}>
-                          <div>
-                            <strong>{st.name}</strong>
-                            <span style={{ marginLeft: '4px', fontSize: '11px', color: st.isPaid ? '#2e7d32' : '#c62828' }}>
-                              ({st.isPaid ? '已付' : '未付'})
-                            </span>
-                          </div>
-                          <div style={{ display: 'flex', gap: '4px' }}>
-                            <button 
-                              onClick={() => {
-                                const msg = `你好 ${st.name}，關於預約在 ${selectedLessonModal.date} ${selectedLessonModal.startTime || selectedLessonModal.time} 的【${selectedLessonModal.courseName}】羽毛球課堂：`;
-                                openWhatsApp(phone, msg);
-                              }} 
-                              style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: '#25D366', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-                              💬 WA
-                            </button>
-                            <button 
-                              onClick={() => handleTogglePaidStatus(st.name)} 
-                              style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: st.isPaid ? '#fabb6e' : '#4eac6d', color: '#fff', cursor: 'pointer' }}>
-                              {st.isPaid ? '設未付' : '設已付'}
-                            </button>
-                            <button 
-                              onClick={() => handleRemoveStudentFromLesson(st.name)} 
-                              style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: '#e57373', color: '#fff', cursor: 'pointer' }}>
-                              移除
-                            </button>
-                          </div>
+                    selectedLessonModal.enrolledStudents.map((st, idx) => (
+                      <div 
+                        key={idx} 
+                        onDoubleClick={() => handleOpenStudentModalByName(st.name)}
+                        title="💡 雙擊查看或修改學員資料"
+                        style={{ 
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                          backgroundColor: '#fff', padding: '6px 8px', borderRadius: '6px', 
+                          marginBottom: '6px', fontSize: '12px', border: '1px solid #eee',
+                          cursor: 'pointer', userSelect: 'none'
+                        }}>
+                        <div>
+                          <strong>👤 {st.name}</strong>
+                          <span style={{ marginLeft: '4px', fontSize: '11px', color: st.isPaid ? '#2e7d32' : '#c62828' }}>
+                            ({st.isPaid ? '已付' : '未付'})
+                          </span>
                         </div>
-                      );
-                    })
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleTogglePaidStatus(st.name); }} 
+                            style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: st.isPaid ? '#fabb6e' : '#4eac6d', color: '#fff', cursor: 'pointer' }}>
+                            {st.isPaid ? '設未付' : '設已付'}
+                          </button>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleRemoveStudentFromLesson(st.name); }} 
+                            style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: '#e57373', color: '#fff', cursor: 'pointer' }}>
+                            移除
+                          </button>
+                        </div>
+                      </div>
+                    ))
                   )}
 
                   {/* 新增學員介面 */}
