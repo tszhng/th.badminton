@@ -15,8 +15,8 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v3.10.2";
-      const LAST_UPDATED = "2026-10-03 01:00";
+      const APP_VERSION = "v4.1.0";
+      const LAST_UPDATED = "2026-10-03 22:20";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -170,8 +170,9 @@
       };
 
       const getStudentCompletedLessonCount = (studentName) => {
+        const realToday = getRealTodayString();
         return schedule.filter(lesson => 
-          lesson.date <= todayStr && 
+          lesson.date <= realToday && 
           lesson.enrolledStudents && 
           lesson.enrolledStudents.some(s => s.name === studentName)
         ).length;
@@ -246,6 +247,7 @@
         return d.toISOString().split('T')[0];
       };
 
+      const tomorrowStr = getDateOffsetStr(1);
       const day7Str = getDateOffsetStr(7);
 
       const getNext7DaysRange = () => {
@@ -294,16 +296,15 @@
         .filter(item => item.date === selectedDate)
         .sort((a, b) => timeToMinutes(a.startTime || a.time) - timeToMinutes(b.startTime || b.time));
 
-      const todayLessons = schedule.filter(item => item.date === todayStr);
+      const realTodayStr = getRealTodayString();
+      const tomorrowLessons = schedule.filter(item => item.date === tomorrowStr);
       const day7Lessons = schedule.filter(item => item.date === day7Str);
 
       const monthlySchedule = schedule
         .filter(item => item.date.startsWith(selectedMonth))
         .sort((a, b) => new Date(a.date) - new Date(b.date) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
 
-      // 預計收入：選擇月份所有已排課的收入（含教練費及場地費/或按人頭計算總額）
       let estimatedIncome = 0;
-      // 總收入：選擇月份已上堂 (date <= todayStr) 且已繳費的收入
       let totalIncome = 0;
       let totalExpense = 0;
 
@@ -312,8 +313,7 @@
         estimatedIncome += totalFee;
         totalExpense += (Number(item.courtFee) || 0);
 
-        // 計算已上堂且已繳費的總收入
-        if (item.date <= todayStr && item.enrolledStudents && item.enrolledStudents.length > 0) {
+        if (item.date <= realTodayStr && item.enrolledStudents && item.enrolledStudents.length > 0) {
           const coach = Number(item.coachFee) || 0;
           const court = Number(item.courtFee) || 0;
           
@@ -573,7 +573,7 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `th_badminton_backup_${todayStr}.json`;
+        a.download = `th_badminton_backup_${getRealTodayString()}.json`;
         a.click();
       };
 
@@ -620,15 +620,15 @@
               <div style={{ ...cardStyle, borderLeft: '5px solid #ff9800', backgroundColor: '#fffde7' }}>
                 <div style={{ fontWeight: 'bold', fontSize: '14px', color: '#e65100', marginBottom: '6px', display: 'flex', justifyContent: 'space-between' }}>
                   <span>🔔 課堂提醒</span>
-                  <span style={{ fontSize: '11px', color: '#888' }}>{todayStr}</span>
+                  <span style={{ fontSize: '11px', color: '#888' }}>{realTodayStr}</span>
                 </div>
 
                 <div style={{ fontSize: '12px', color: '#333', marginBottom: '8px' }}>
-                  <strong>📍 今日上課通知 ({todayLessons.length} 堂)：</strong>
-                  {todayLessons.length === 0 ? (
-                    <div style={{ color: '#777', marginTop: '2px' }}>今天沒有排課</div>
+                  <strong>📍 明天上課通知 ({tomorrowLessons.length} 堂) [{tomorrowStr}]：</strong>
+                  {tomorrowLessons.length === 0 ? (
+                    <div style={{ color: '#777', marginTop: '2px' }}>明天沒有排課</div>
                   ) : (
-                    todayLessons.map(item => (
+                    tomorrowLessons.map(item => (
                       <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', padding: '4px 6px', backgroundColor: '#fff', borderRadius: '4px', border: '1px solid #ffe082' }}>
                         <span>🏸 {item.courseName} ({item.startTime})</span>
                         <button 
@@ -693,7 +693,7 @@
                   {getFull6WeeksGrid(selectedMonth).map(({ dateStr, dayNum, isCurrentMonth }) => {
                     const hasLesson = schedule.some(s => s.date === dateStr);
                     const isSelected = dateStr === selectedDate;
-                    const isToday = dateStr === todayStr;
+                    const isToday = dateStr === realTodayStr;
                     const isNext7Days = next7DaysList.includes(dateStr);
                     const isSeventhDay = dateStr === seventhDayStr;
 
@@ -1082,17 +1082,17 @@
               </div>
 
               <div style={cardStyle}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>⚙️ 預設課程名稱與費用設定</h3>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>⚙ 預設課程名稱與費用設定</h3>
                 
                 {courseTypes.map(c => (
-                  <div key={c.id} style={{ padding: '10px 0', borderBottom: '1px solid #eee', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <div>
+                  <div key={c.id} style={{ padding: '10px 0', borderBottom: '1px solid #eee', fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <strong>{c.name}</strong> (上限 {c.maxCapacity} 人)
                       <div style={{ fontSize: '11px', color: '#666' }}>
                         模式: {c.feeMode === 'per_person' ? '每人收費' : '整堂收費'} | 課堂費: HK${c.defaultCoachFee} | 場地費: HK${c.defaultCourtFee}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
                       <button onClick={() => {
                         setEditingCourseTypeId(c.id);
                         setCourseTypeForm({
@@ -1103,8 +1103,8 @@
                           defaultCoachFee: c.defaultCoachFee,
                           defaultCourtFee: c.defaultCourtFee
                         });
-                      }} style={{ padding: '4px 8px', backgroundColor: '#e0e0e0', color: '#333', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>✏ 編輯</button>
-                      <button onClick={() => setCourseTypes(courseTypes.filter(ct => ct.id !== c.id))} style={{ padding: '4px 8px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer' }}>刪除</button>
+                      }} style={{ padding: '4px 8px', backgroundColor: '#e0e0e0', color: '#333', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>✏ 編輯</button>
+                      <button onClick={() => setCourseTypes(courseTypes.filter(ct => ct.id !== c.id))} style={{ padding: '4px 8px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>刪除</button>
                     </div>
                   </div>
                 ))}
@@ -1717,7 +1717,7 @@
             <button onClick={() => setActiveTab('schedule')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'schedule' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>📅<br/>課表</button>
             <button onClick={() => setActiveTab('revenue')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'revenue' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>⚖️<br/>收支</button>
             <button onClick={() => setActiveTab('students')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'students' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>👤<br/>學員</button>
-            <button onClick={() => setActiveTab('settings')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'settings' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>⚙️<br/>設定</button>
+            <button onClick={() => setActiveTab('settings')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'settings' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>⚙️️<br/>設定</button>
           </nav>
         </div>
       );
