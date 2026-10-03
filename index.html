@@ -15,8 +15,8 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v3.10.1";
-      const LAST_UPDATED = "2026-10-03 00:30";
+      const APP_VERSION = "v3.10.2";
+      const LAST_UPDATED = "2026-10-03 01:00";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -59,7 +59,7 @@
         return () => clearInterval(interval);
       }, [todayStr]);
 
-      // 墊付人名單狀態 (預設: ["待定", "TH Coach", "Yan"])
+      // 墊支人名單狀態 (預設: ["待定", "TH Coach", "Yan"])
       const [courtPayers, setCourtPayers] = useState(() => {
         const saved = localStorage.getItem('th_badminton_courtPayers');
         return saved ? JSON.parse(saved) : ['待定', 'TH Coach', 'Yan'];
@@ -150,7 +150,7 @@
         const trimmed = newPayerInput.trim();
         if (!trimmed) return;
         if (courtPayers.includes(trimmed)) {
-          alert('該墊付人已在名單中！');
+          alert('該墊支人已在名單中！');
           return;
         }
         setCourtPayers([...courtPayers, trimmed]);
@@ -162,7 +162,7 @@
           alert('「待定」為系統預設選項，無法刪除！');
           return;
         }
-        if (window.confirm(`⚠️ 確定要從名單中刪除墊付人「${payer}」嗎？\n\n提示：刪除此名單不會影響先前已記錄的歷史課堂與收支紀錄。`)) {
+        if (window.confirm(`⚠️ 確定要從名單中刪除墊支人「${payer}」嗎？\n\n提示：刪除此名單不會影響先前已記錄的歷史課堂與收支紀錄。`)) {
           if (window.confirm(`再次確認：您真的要刪除「${payer}」嗎？`)) {
             setCourtPayers(courtPayers.filter(p => p !== payer));
           }
@@ -318,25 +318,18 @@
           const court = Number(item.courtFee) || 0;
           
           if (item.feeMode === 'per_person') {
-            // 按每人收費：只計算已繳費學員的教練費 + 攤分/或整堂場地費（這裡視學員已繳交的各人學費，通常每人交 coach + court 分攤或獨立計算，若系統內學員無獨立記金額，可用以下邏輯：若已繳費則累計該學員應付部分）
             item.enrolledStudents.forEach(st => {
               if (st.isPaid) {
-                // 如果是每人收費，每人學費為 coachFee + (courtFee / 人數 或類似，這裡以 coachFee + 均分場地費或直接加 coachFee)
-                // 依據原本 calculateTotalFee 邏輯，每人每堂貢獻 = coachFee + (courtFee / 總人數) 或單純算每人教練費+場地費
-                // 為了精準，我們計算該學員產生的費用：coach + (court / 總人數)
                 const perPersonCourt = item.enrolledStudents.length > 0 ? court / item.enrolledStudents.length : 0;
                 totalIncome += (coach + perPersonCourt);
               }
             });
           } else {
-            // 按整堂收費：只要整堂有學員繳費（或只要該堂已上且有標記已繳費），若全堂已付則計入整堂總費
             const isAnyPaid = item.enrolledStudents.some(st => st.isPaid);
             if (isAnyPaid) {
-              // 簡單起見，如果整堂有學員付了錢或者依已付學員比例，此處如為整堂收費通常為一口價，只要有人付或全付：
-              // 這裡精確計算已付學員佔的比例或直接若該堂已付費就計入
               const paidCount = item.enrolledStudents.filter(st => st.isPaid).length;
               if (paidCount > 0) {
-                totalIncome += totalFee; // 簡化為只要有繳費即算該堂收入（或可按比例）
+                totalIncome += totalFee;
               }
             }
           }
@@ -381,7 +374,7 @@
         if (lessonForm.courtPayer === '__CUSTOM__') {
           const customPayer = lessonForm.customCourtPayer.trim();
           if (!customPayer) {
-            alert('請輸入新墊付人姓名！');
+            alert('請輸入新墊支人姓名！');
             return;
           }
           finalCourtPayer = customPayer;
@@ -851,7 +844,6 @@
                 </button>
               </div>
 
-              {/* 更新後的收支卡片：預計收入、總收入、總支出、純利潤 */}
               <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', textAlign: 'center', padding: '12px 8px' }}>
                 <div style={{ backgroundColor: '#f1f8e9', padding: '8px', borderRadius: '6px' }}>
                   <div style={{ fontSize: '11px', color: '#558b2f', marginBottom: '2px', fontWeight: 'bold' }}>預計收入 (全月已排課)</div>
@@ -1059,9 +1051,9 @@
           {/* TAB 4: 設定 */}
           {activeTab === 'settings' && (
             <div>
-              {/* 場地費墊付人名單管理 */}
+              {/* 場地費墊支人名單管理 */}
               <div style={cardStyle}>
-                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>💳 場地費墊付人名單管理</h3>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>💳 場地費墊支人名單管理</h3>
                 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
                   {courtPayers.map(payer => (
@@ -1076,7 +1068,7 @@
 
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <input 
-                    placeholder="輸入新墊付人姓名..." 
+                    placeholder="輸入新墊支人姓名..." 
                     value={newPayerInput} 
                     onChange={e => setNewPayerInput(e.target.value)} 
                     style={{ ...inputStyle, flex: 1 }} 
@@ -1084,7 +1076,7 @@
                   <button 
                     onClick={handleAddCourtPayer} 
                     style={{ padding: '6px 12px', backgroundColor: '#1976d2', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
-                    新增墊付人
+                    新增墊支人
                   </button>
                 </div>
               </div>
@@ -1406,7 +1398,7 @@
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: '#666' }}>場地費墊付人</label>
+                    <label style={{ fontSize: '11px', color: '#666' }}>場地費墊支人</label>
                     <select 
                       value={lessonForm.courtPayer} 
                       onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} 
@@ -1414,12 +1406,12 @@
                       {courtPayers.map(p => (
                         <option key={p} value={p}>{p}</option>
                       ))}
-                      <option value="__CUSTOM__">➕ 新增墊付人...</option>
+                      <option value="__CUSTOM__">➕ 新增墊支人...</option>
                     </select>
 
                     {lessonForm.courtPayer === '__CUSTOM__' && (
                       <input 
-                        placeholder="請輸入新墊付人姓名" 
+                        placeholder="請輸入新墊支人姓名" 
                         value={lessonForm.customCourtPayer} 
                         onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value})} 
                         style={inputStyle}
@@ -1506,7 +1498,7 @@
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: '#666' }}>場地費墊付人</label>
+                    <label style={{ fontSize: '11px', color: '#666' }}>場地費墊支人</label>
                     <select 
                       value={courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : '__CUSTOM__'} 
                       onChange={e => {
@@ -1521,12 +1513,12 @@
                       {courtPayers.map(p => (
                         <option key={p} value={p}>{p}</option>
                       ))}
-                      <option value="__CUSTOM__">➕ 新增墊付人...</option>
+                      <option value="__CUSTOM__">➕ 新增墊支人...</option>
                     </select>
 
                     {(lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) && (
                       <input 
-                        placeholder="請輸入新墊付人姓名" 
+                        placeholder="請輸入新墊支人姓名" 
                         value={lessonForm.customCourtPayer || (courtPayers.includes(lessonForm.courtPayer) ? '' : lessonForm.courtPayer)} 
                         onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value, courtPayer: '__CUSTOM__'})} 
                         style={inputStyle}
