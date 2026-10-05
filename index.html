@@ -7,6 +7,15 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- 指向 Manifest 檔案（Android / Chrome） -->
+<link rel="manifest" href="manifest.json">
+
+<!-- iOS Safari 主頁面圖示 -->
+<link rel="apple-touch-icon" href="icon.png">
+
+<!-- 設定 iOS 狀態欄顏色（可選） -->
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TH.badminton">
 </head>
 <body style="margin: 0; background-color: #f8f9fa;">
   <div id="root"></div>
@@ -15,7 +24,7 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.2.0";
+      const APP_VERSION = "v4.2.1";
       const LAST_UPDATED = "2026-10-05 17:30";
 
       const getRealTodayString = () => {
