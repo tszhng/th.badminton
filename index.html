@@ -15,8 +15,8 @@
     const { useState, useEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.1.0";
-      const LAST_UPDATED = "2026-10-03 22:20";
+      const APP_VERSION = "v4.2.0";
+      const LAST_UPDATED = "2026-10-05 17:30";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -124,6 +124,18 @@
       const [showAddModal, setShowAddModal] = useState(false);
       const [showEditModal, setShowEditModal] = useState(false);
       const [selectedLessonModal, setSelectedLessonModal] = useState(null);
+
+      // 續堂 Modal 狀態
+      const [showRenewModal, setShowRenewModal] = useState(false);
+      const [renewForm, setRenewForm] = useState({
+        originalLesson: null,
+        date: '',
+        startTime: '19:00',
+        endTime: '21:00',
+        court: '',
+        courtPayer: 'TH Coach',
+        keepStudents: true
+      });
 
       const [addStudentSelect, setAddStudentSelect] = useState('');
       const [addStudentCustom, setAddStudentCustom] = useState('');
@@ -480,13 +492,49 @@
         }
       };
 
-      const handleRenewLesson = (item) => {
+      // 打開續堂設定彈窗
+      const handleOpenRenewModal = (item) => {
         const currentDate = new Date(item.date);
         currentDate.setDate(currentDate.getDate() + 7);
         const nextDateStr = currentDate.toISOString().split('T')[0];
-        const resetStudents = item.enrolledStudents.map(s => ({ ...s, isPaid: false }));
-        setSchedule([...schedule, { ...item, id: Date.now(), date: nextDateStr, enrolledStudents: resetStudents }]);
-        alert(`成功續堂！下週課堂日期：${nextDateStr}`);
+
+        setRenewForm({
+          originalLesson: item,
+          date: nextDateStr,
+          startTime: item.startTime || item.time || '19:00',
+          endTime: item.endTime || '21:00',
+          court: item.court || '',
+          courtPayer: item.courtPayer || 'TH Coach',
+          keepStudents: true
+        });
+        setShowRenewModal(true);
+      };
+
+      // 執行續堂保存
+      const handleConfirmRenewLesson = (e) => {
+        e.preventDefault();
+        const item = renewForm.originalLesson;
+        if (!item) return;
+
+        const updatedStudents = renewForm.keepStudents 
+          ? item.enrolledStudents.map(s => ({ ...s, isPaid: false }))
+          : [];
+
+        const newLesson = {
+          ...item,
+          id: Date.now(),
+          date: renewForm.date,
+          startTime: renewForm.startTime,
+          endTime: renewForm.endTime,
+          court: renewForm.court,
+          courtPayer: renewForm.courtPayer,
+          enrolledStudents: updatedStudents
+        };
+
+        setSchedule([...schedule, newLesson]);
+        setShowRenewModal(false);
+        setSelectedLessonModal(null);
+        alert(`🎉 成功續堂！已排定於 ${renewForm.date} (${renewForm.startTime}-${renewForm.endTime})`);
       };
 
       const addToAppleCalendar = (item) => {
@@ -533,7 +581,7 @@
       };
 
       const handleDeleteStudent = (studentId, studentName) => {
-        if (window.confirm(`⚠️ 確定要刪除學員「${studentName}」嗎？此操作無法撤銷。`)) {
+        if (window.confirm(`⚠️️ 確定要刪除學員「${studentName}」嗎？此操作無法撤銷。`)) {
           setStudents(students.filter(s => s.id !== studentId));
           setSelectedStudentModal(null);
         }
@@ -1676,9 +1724,9 @@
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                   <button 
-                    onClick={() => { handleRenewLesson(selectedLessonModal); setSelectedLessonModal(null); }} 
+                    onClick={() => handleOpenRenewModal(selectedLessonModal)} 
                     style={{ padding: '8px', backgroundColor: '#fabb6e', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
-                    🔄 續堂
+                    🔄 續堂 (可選時間)
                   </button>
                   <button 
                     onClick={() => {
@@ -1708,6 +1756,97 @@
             </div>
           )}
 
+          {/* MODAL: 續堂選項 */}
+          {showRenewModal && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2150, padding: '15px' }}>
+              <div style={{ backgroundColor: '#fff', padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #eee', paddingBottom: '8px' }}>
+                  <h3 style={{ margin: 0, fontSize: '16px' }}>🔄 續堂安排 ({renewForm.originalLesson?.courseName})</h3>
+                  <button onClick={() => setShowRenewModal(false)} style={{ border: 'none', backgroundColor: 'transparent', fontSize: '18px', cursor: 'pointer' }}>✖</button>
+                </div>
+
+                <form onSubmit={handleConfirmRenewLesson} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>📅 續堂日期</label>
+                    <input 
+                      type="date" 
+                      value={renewForm.date} 
+                      onChange={e => setRenewForm({ ...renewForm, date: e.target.value })} 
+                      required 
+                      style={{ ...inputStyle, width: '100%', marginTop: '3px' }} 
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>⏰ 開始時間</label>
+                      <input 
+                        type="time" 
+                        value={renewForm.startTime} 
+                        onChange={e => setRenewForm({ ...renewForm, startTime: e.target.value })} 
+                        required 
+                        style={{ ...inputStyle, marginTop: '3px' }} 
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>⏰ 結束時間</label>
+                      <input 
+                        type="time" 
+                        value={renewForm.endTime} 
+                        onChange={e => setRenewForm({ ...renewForm, endTime: e.target.value })} 
+                        required 
+                        style={{ ...inputStyle, marginTop: '3px' }} 
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>📍 球場地點</label>
+                    <input 
+                      placeholder="球場地點" 
+                      value={renewForm.court} 
+                      onChange={e => setRenewForm({ ...renewForm, court: e.target.value })} 
+                      style={{ ...inputStyle, marginTop: '3px' }} 
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '11px', color: '#666', fontWeight: 'bold' }}>💳 場地費墊支人</label>
+                    <select 
+                      value={renewForm.courtPayer} 
+                      onChange={e => setRenewForm({ ...renewForm, courtPayer: e.target.value })} 
+                      style={{ ...inputStyle, paddingRight: '20px', marginTop: '3px' }}>
+                      {courtPayers.map(p => (
+                        <option key={p} value={p}>{p}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ backgroundColor: '#f0f4f8', padding: '8px 10px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setRenewForm({ ...renewForm, keepStudents: !renewForm.keepStudents })}>
+                    <input 
+                      type="checkbox" 
+                      checked={renewForm.keepStudents} 
+                      onChange={e => setRenewForm({ ...renewForm, keepStudents: e.target.checked })} 
+                      style={{ cursor: 'pointer' }}
+                    />
+                    <label style={{ fontSize: '12px', color: '#333', cursor: 'pointer', userSelect: 'none' }}>
+                      帶入原學員名單 (付款狀態將重置為「未付」)
+                    </label>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
+                    <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: '#fabb6e', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}>
+                      確認續堂
+                    </button>
+                    <button type="button" onClick={() => setShowRenewModal(false)} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                      取消
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+
           {/* 底部導覽列 */}
           <nav style={{ 
             position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#ffffff', borderTop: '1px solid #e0e0e0', 
@@ -1717,7 +1856,7 @@
             <button onClick={() => setActiveTab('schedule')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'schedule' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>📅<br/>課表</button>
             <button onClick={() => setActiveTab('revenue')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'revenue' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>⚖️<br/>收支</button>
             <button onClick={() => setActiveTab('students')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'students' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>👤<br/>學員</button>
-            <button onClick={() => setActiveTab('settings')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'settings' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>⚙️️<br/>設定</button>
+            <button onClick={() => setActiveTab('settings')} style={{ border: 'none', backgroundColor: 'transparent', color: activeTab === 'settings' ? '#5b8bf7' : '#8e8e93', fontSize: '11px', cursor: 'pointer' }}>⚙<br/>設定</button>
           </nav>
         </div>
       );
