@@ -31,8 +31,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.4.2";
-      const LAST_UPDATED = "2026-10-13 10:50";
+      const APP_VERSION = "v4.4.4";
+      const LAST_UPDATED = "2026-10-13 11:35";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -84,7 +84,6 @@
       const [showDropdownNotif, setShowDropdownNotif] = useState(false);
       const notifRef = useRef(null);
 
-      // 動態導覽列膠囊定位用的 Refs
       const navContainerRef = useRef(null);
       const tabRefs = useRef({});
       const [capsuleStyle, setCapsuleStyle] = useState({ left: 0, width: 0, opacity: 0 });
@@ -96,7 +95,6 @@
         { id: 'settings', label: '設定', icon: 'settings' }
       ];
 
-      // 計算並更新膠囊的精準位置與寬度
       const updateCapsulePosition = () => {
         const currentTabEl = tabRefs.current[activeTab];
         const containerEl = navContainerRef.current;
@@ -104,7 +102,6 @@
           const containerRect = containerEl.getBoundingClientRect();
           const tabRect = currentTabEl.getBoundingClientRect();
           
-          // 膠囊寬度貼合按鈕大小（並預留一些左右間距，使其看起來像膠囊）
           const capsuleWidth = Math.min(tabRect.width - 8, 64);
           const capsuleLeft = (tabRect.left - containerRect.left) + (tabRect.width - capsuleWidth) / 2;
 
@@ -949,7 +946,13 @@
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
                   style={{ ...cardStyle, padding: '10px', touchAction: 'pan-y' }}>
+                  
+                  {/* 日曆頂部列：左側年月，右側按鈕 */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: theme.textPrimary }}>
+                      {selectedMonth}
+                    </span>
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <button 
                         onClick={() => { 
@@ -982,10 +985,6 @@
                         {calendarViewMode === 'week' ? '周' : '月'}
                       </button>
                     </div>
-
-                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: theme.textPrimary }}>
-                      {selectedMonth}
-                    </span>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: theme.textSecondary, marginBottom: '6px' }}>
@@ -1025,9 +1024,10 @@
                             onClick={() => { setSelectedDate(dateStr); setSelectedMonth(dateStr.substring(0, 7)); }} 
                             style={{ 
                               height: '36px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-                              borderRadius: '8px', backgroundColor: bgColor, color: textColor, fontSize: '13px', 
+                              backgroundColor: bgColor, color: textColor, fontSize: '13px', 
                               fontWeight: isSelected || isToday || isNext7Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
-                              border: isToday && !isSelected ? '2px solid #5b8bf7' : 'none'
+                              width: '36px', margin: '0 auto', borderRadius: '50%', boxSizing: 'border-box',
+                              boxShadow: isToday && !isSelected ? 'inset 0 0 0 2px #5b8bf7' : 'none'
                             }}>
                             {dayNum}
                             {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSeventhDay ? '#fff' : '#e57373', position: 'absolute', bottom: '3px' }} />}
@@ -1065,14 +1065,15 @@
                             key={dateStr} 
                             onClick={() => { setSelectedDate(dateStr); if (!isCurrentMonth) setSelectedMonth(dateStr.substring(0, 7)); }} 
                             style={{ 
-                              height: '36px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-                              borderRadius: '8px', backgroundColor: bgColor, color: textColor, fontSize: '13px', 
+                              height: '34px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                              backgroundColor: bgColor, color: textColor, fontSize: '13px', 
                               fontWeight: isSelected || isToday || isNext7Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
                               opacity: isCurrentMonth ? 1 : 0.5,
-                              border: isToday && !isSelected ? '2px solid #5b8bf7' : 'none'
+                              width: '34px', margin: '1px auto', borderRadius: '50%', boxSizing: 'border-box',
+                              boxShadow: isToday && !isSelected ? 'inset 0 0 0 2px #5b8bf7' : 'none'
                             }}>
                             {dayNum}
-                            {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSeventhDay ? '#fff' : '#e57373', position: 'absolute', bottom: '3px' }} />}
+                            {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSeventhDay ? '#fff' : '#e57373', position: 'absolute', bottom: '2px' }} />}
                           </div>
                         );
                       })
