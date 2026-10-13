@@ -19,8 +19,8 @@
     const { useState, useEffect, useRef } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.2.5";
-      const LAST_UPDATED = "2026-10-12 21:15";
+      const APP_VERSION = "v4.2.6";
+      const LAST_UPDATED = "2026-10-13 09:00";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -64,15 +64,16 @@
       const [selectedDate, setSelectedDate] = useState(todayStr);
       const [selectedMonth, setSelectedMonth] = useState(getMonthString(todayStr));
 
+      // 視圖模式：'week' (周曆) 或 'month' (月曆)，預設為周曆
+      const [calendarViewMode, setCalendarViewMode] = useState('week');
+
       const [showAmount, setShowAmount] = useState(false);
       const [activeTab, setActiveTab] = useState('schedule');
       const [expandedPayers, setExpandedPayers] = useState({});
 
-      // 下拉式課堂提醒面板開關狀態
       const [showDropdownNotif, setShowDropdownNotif] = useState(false);
       const notifRef = useRef(null);
 
-      // 點擊畫面其他地方自動關閉下拉提醒選單
       useEffect(() => {
         const handleClickOutside = (e) => {
           if (notifRef.current && !notifRef.current.contains(e.target)) {
@@ -318,6 +319,24 @@
       const next7DaysList = getNext7DaysRange();
       const seventhDayStr = next7DaysList[6];
 
+      // 取得指定日期所在的一周 (周日至周六)
+      const getCurrentWeekDays = (dateStr) => {
+        const d = new Date(dateStr);
+        const day = d.getDay(); // 0 是周日
+        const diff = d.getDate() - day;
+        
+        const weekDays = [];
+        for (let i = 0; i < 7; i++) {
+          const nextD = new Date(d.setDate(diff + i));
+          const y = nextD.getFullYear();
+          const m = String(nextD.getMonth() + 1).padStart(2, '0');
+          const dayNum = String(nextD.getDate()).padStart(2, '0');
+          const formatted = `${y}-${m}-${dayNum}`;
+          weekDays.push({ dateStr: formatted, dayNum: Number(dayNum) });
+        }
+        return weekDays;
+      };
+
       const getFull6WeeksGrid = (yearMonth) => {
         const [year, month] = yearMonth.split('-').map(Number);
         const firstDayIndex = new Date(year, month - 1, 1).getDay();
@@ -344,6 +363,22 @@
           nextDay++;
         }
         return days;
+      };
+
+      // 左右滑動切換周或月
+      const handleDateSwipe = (direction) => {
+        const d = new Date(selectedDate);
+        if (calendarViewMode === 'week') {
+          d.setDate(d.getDate() + (direction === 'next' ? 7 : -7));
+        } else {
+          d.setMonth(d.getMonth() + (direction === 'next' ? 1 : -1));
+        }
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dayStr = String(d.getDate()).padStart(2, '0');
+        const newStr = `${y}-${m}-${dayStr}`;
+        setSelectedDate(newStr);
+        setSelectedMonth(getMonthString(newStr));
       };
 
       const daySchedule = schedule
@@ -692,7 +727,6 @@
 
       const formatAmount = (num) => showAmount ? `$${Number(num).toFixed(0)}` : '****';
 
-      // 簡潔 SVG 圖標庫
       const icons = {
         shuttlecock: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3 7-3 3-3-3 3-7z"/><path d="M9 12l-5 8h16l-5-8"/><line x1="12" y1="12" x2="12" y2="22"/></svg>,
         calendar: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
@@ -704,7 +738,6 @@
         bell: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
         whatsapp: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>,
         plus: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
-        pin: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
         money: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
         location: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>,
         calendarPlus: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>,
@@ -729,10 +762,10 @@
           paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 20px))', 
           fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', backgroundColor: theme.bg, color: theme.textPrimary, minHeight: '100vh', boxSizing: 'border-box', transition: 'background-color 0.2s, color 0.2s' 
         }}>
-          {/* 頂部安全區控制列：僅顯示右上角的鈴鐺提醒按鈕與深淺色模式按鈕，且只留 logo 不帶文字 */}
+          {/* 頂部安全區控制列 */}
           <header style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px', marginBottom: '15px', position: 'relative', zIndex: 1100 }}>
             
-            {/* 鈴鐺提醒按鈕與下拉面板包裝 */}
+            {/* 鈴鐺提醒按鈕與下拉面板 */}
             <div ref={notifRef} style={{ position: 'relative' }}>
               <button 
                 onClick={() => setShowDropdownNotif(!showDropdownNotif)}
@@ -745,7 +778,6 @@
                 {icons.bell}
               </button>
 
-              {/* 下拉式課堂提醒頁面 / 面板 */}
               {showDropdownNotif && (
                 <div style={{ 
                   position: 'absolute', right: 0, top: '40px', width: '300px', 
@@ -807,7 +839,7 @@
               )}
             </div>
 
-            {/* 深淺色模式切換按鈕（只留 logo 圖標，不帶文字） */}
+            {/* 深淺色模式切換按鈕 */}
             <button 
               onClick={() => setIsDarkMode(!isDarkMode)} 
               style={{ 
@@ -825,65 +857,150 @@
             <div>
               <div style={{ ...cardStyle, padding: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <button 
-                    onClick={() => { 
-                      const realToday = getRealTodayString();
-                      setTodayStr(realToday);
-                      setSelectedDate(realToday); 
-                      setSelectedMonth(getMonthString(realToday)); 
-                    }} 
-                    style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '4px 8px', fontSize: '12px', backgroundColor: isDarkMode ? '#1b3320' : '#e8f5e9', color: '#2e7d32', border: `1px solid ${isDarkMode ? '#2d5a36' : '#c8e6c9'}`, borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-                    {icons.pin} 今天
-                  </button>
-                  <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '4px 8px', fontSize: '13px', borderRadius: '6px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }} />
+                  {/* 左側操作列：回到今天「今」字圓形按鈕、周/月切換圓形按鈕、左右翻頁按鈕 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button 
+                      onClick={() => { 
+                        const realToday = getRealTodayString();
+                        setTodayStr(realToday);
+                        setSelectedDate(realToday); 
+                        setSelectedMonth(getMonthString(realToday)); 
+                      }} 
+                      style={{ 
+                        width: '30px', height: '30px', borderRadius: '50%', 
+                        backgroundColor: isDarkMode ? '#1b3320' : '#e8f5e9', color: '#2e7d32', 
+                        border: `1px solid ${isDarkMode ? '#2d5a36' : '#c8e6c9'}`, 
+                        fontWeight: 'bold', fontSize: '12px', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: theme.shadow
+                      }}
+                      title="回到今天">
+                      今
+                    </button>
+
+                    <button 
+                      onClick={() => setCalendarViewMode(calendarViewMode === 'week' ? 'month' : 'week')}
+                      style={{ 
+                        width: '30px', height: '30px', borderRadius: '50%', 
+                        backgroundColor: isDarkMode ? '#1a2936' : '#e3f2fd', color: '#1565c0', 
+                        border: `1px solid ${isDarkMode ? '#204060' : '#bbdefb'}`, 
+                        fontWeight: 'bold', fontSize: '12px', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: theme.shadow
+                      }}
+                      title={calendarViewMode === 'week' ? '切換為月曆模式' : '切換為周曆模式'}>
+                      {calendarViewMode === 'week' ? '周' : '月'}
+                    </button>
+                  </div>
+
+                  {/* 右側：月份顯示與左右翻頁切換 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button 
+                      onClick={() => handleDateSwipe('prev')} 
+                      style={{ padding: '4px 8px', fontSize: '12px', borderRadius: '6px', border: `1px solid ${theme.border}`, backgroundColor: theme.cardBg, color: theme.textPrimary, cursor: 'pointer' }}>
+                      ◀
+                    </button>
+                    <span style={{ fontSize: '13px', fontWeight: 'bold', color: theme.textPrimary }}>
+                      {selectedMonth}
+                    </span>
+                    <button 
+                      onClick={() => handleDateSwipe('next')} 
+                      style={{ padding: '4px 8px', fontSize: '12px', borderRadius: '6px', border: `1px solid ${theme.border}`, backgroundColor: theme.cardBg, color: theme.textPrimary, cursor: 'pointer' }}>
+                      ▶
+                    </button>
+                  </div>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: theme.textSecondary, marginBottom: '6px' }}>
                   {weekLabels.map((w, idx) => <div key={idx}>{w}</div>)}
                 </div>
                 
+                {/* 根據 calendarViewMode 渲染周曆或月曆 */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center' }}>
-                  {getFull6WeeksGrid(selectedMonth).map(({ dateStr, dayNum, isCurrentMonth }) => {
-                    const hasLesson = schedule.some(s => s.date === dateStr);
-                    const isSelected = dateStr === selectedDate;
-                    const isToday = dateStr === realTodayStr;
-                    const isNext7Days = next7DaysList.includes(dateStr);
-                    const isSeventhDay = dateStr === seventhDayStr;
+                  {calendarViewMode === 'week' ? (
+                    // 周曆模式
+                    getCurrentWeekDays(selectedDate).map(({ dateStr, dayNum }) => {
+                      const hasLesson = schedule.some(s => s.date === dateStr);
+                      const isSelected = dateStr === selectedDate;
+                      const isToday = dateStr === realTodayStr;
+                      const isNext7Days = next7DaysList.includes(dateStr);
+                      const isSeventhDay = dateStr === seventhDayStr;
 
-                    let bgColor = isDarkMode ? '#252525' : '#f0f0f0';
-                    let textColor = isCurrentMonth ? theme.textPrimary : theme.textMuted;
+                      let bgColor = isDarkMode ? '#252525' : '#f0f0f0';
+                      let textColor = theme.textPrimary;
 
-                    if (isNext7Days) { 
-                      if (isSeventhDay) {
-                        bgColor = '#ff9800';
-                        textColor = '#ffffff';
-                      } else {
-                        bgColor = isDarkMode ? '#3b2811' : '#fff3e0';
-                        textColor = isCurrentMonth ? '#e65100' : '#ffb74d'; 
+                      if (isNext7Days) { 
+                        if (isSeventhDay) {
+                          bgColor = '#ff9800';
+                          textColor = '#ffffff';
+                        } else {
+                          bgColor = isDarkMode ? '#3b2811' : '#fff3e0';
+                          textColor = '#e65100'; 
+                        }
                       }
-                    }
 
-                    if (isSelected) { 
-                      bgColor = '#5b8bf7'; 
-                      textColor = '#fff'; 
-                    }
+                      if (isSelected) { 
+                        bgColor = '#5b8bf7'; 
+                        textColor = '#fff'; 
+                      }
 
-                    return (
-                      <div 
-                        key={dateStr} 
-                        onClick={() => { setSelectedDate(dateStr); if (!isCurrentMonth) setSelectedMonth(dateStr.substring(0, 7)); }} 
-                        style={{ 
-                          height: '36px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-                          borderRadius: '8px', backgroundColor: bgColor, color: textColor, fontSize: '13px', 
-                          fontWeight: isSelected || isToday || isNext7Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
-                          opacity: isCurrentMonth ? 1 : 0.5,
-                          border: isToday && !isSelected ? '2px solid #5b8bf7' : 'none'
-                        }}>
-                        {dayNum}
-                        {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSeventhDay ? '#fff' : '#e57373', position: 'absolute', bottom: '3px' }} />}
-                      </div>
-                    );
-                  })}
+                      return (
+                        <div 
+                          key={dateStr} 
+                          onClick={() => { setSelectedDate(dateStr); setSelectedMonth(dateStr.substring(0, 7)); }} 
+                          style={{ 
+                            height: '40px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                            borderRadius: '8px', backgroundColor: bgColor, color: textColor, fontSize: '13px', 
+                            fontWeight: isSelected || isToday || isNext7Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
+                            border: isToday && !isSelected ? '2px solid #5b8bf7' : 'none'
+                          }}>
+                          {dayNum}
+                          {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSeventhDay ? '#fff' : '#e57373', position: 'absolute', bottom: '4px' }} />}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    // 月曆模式 (完整6周格網)
+                    getFull6WeeksGrid(selectedMonth).map(({ dateStr, dayNum, isCurrentMonth }) => {
+                      const hasLesson = schedule.some(s => s.date === dateStr);
+                      const isSelected = dateStr === selectedDate;
+                      const isToday = dateStr === realTodayStr;
+                      const isNext7Days = next7DaysList.includes(dateStr);
+                      const isSeventhDay = dateStr === seventhDayStr;
+
+                      let bgColor = isDarkMode ? '#252525' : '#f0f0f0';
+                      let textColor = isCurrentMonth ? theme.textPrimary : theme.textMuted;
+
+                      if (isNext7Days) { 
+                        if (isSeventhDay) {
+                          bgColor = '#ff9800';
+                          textColor = '#ffffff';
+                        } else {
+                          bgColor = isDarkMode ? '#3b2811' : '#fff3e0';
+                          textColor = isCurrentMonth ? '#e65100' : '#ffb74d'; 
+                        }
+                      }
+
+                      if (isSelected) { 
+                        bgColor = '#5b8bf7'; 
+                        textColor = '#fff'; 
+                      }
+
+                      return (
+                        <div 
+                          key={dateStr} 
+                          onClick={() => { setSelectedDate(dateStr); if (!isCurrentMonth) setSelectedMonth(dateStr.substring(0, 7)); }} 
+                          style={{ 
+                            height: '36px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
+                            borderRadius: '8px', backgroundColor: bgColor, color: textColor, fontSize: '13px', 
+                            fontWeight: isSelected || isToday || isNext7Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
+                            opacity: isCurrentMonth ? 1 : 0.5,
+                            border: isToday && !isSelected ? '2px solid #5b8bf7' : 'none'
+                          }}>
+                          {dayNum}
+                          {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSeventhDay ? '#fff' : '#e57373', position: 'absolute', bottom: '3px' }} />}
+                        </div>
+                      );
+                    })
+                  )}
                 </div>
               </div>
 
