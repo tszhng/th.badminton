@@ -45,8 +45,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.5.5";
-      const LAST_UPDATED = "2026-10-15 15:10";
+      const APP_VERSION = "v4.5.9";
+      const LAST_UPDATED = "2026-10-15 18:45";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -877,20 +877,29 @@
                 bgColor = '#0071e3';
                 textColor = '#ffffff';
                 subColor = 'rgba(255,255,255,0.85)';
+              } else if (isToday) {
+                textColor = '#ff3b30';
+                subColor = '#ff3b30';
               } else if (isSeventhDay) {
-                bgColor = isDarkMode ? '#3b2511' : '#fff3e0';
-                textColor = '#ff9500';
-                subColor = '#ff9500';
+                bgColor = isDarkMode ? '#3d2612' : '#fff3e0';
+                textColor = '#d97706';
+                subColor = '#d97706';
+              } else if (isWithin7Days) {
+                bgColor = isDarkMode ? '#241b12' : '#fdf8f2';
+                textColor = isDarkMode ? '#f6ad55' : '#b45309';
+                subColor = '#d97706';
               }
 
               let borderStyle = `1px solid ${theme.border}`;
-              if (isSeventhDay && !isSelected) {
-                borderStyle = '2px solid #ff9500';
-              } else if (isToday && !isSelected) {
-                borderStyle = '2px solid #0071e3';
+              if (isSelected) {
+                borderStyle = '1px solid #0071e3';
+              } else if (isToday) {
+                borderStyle = '1.5px solid #ff3b30';
+              } else if (isSeventhDay) {
+                borderStyle = '1.5px solid #d97706';
+              } else if (isWithin7Days) {
+                borderStyle = '1px solid #f6ad55';
               }
-
-              const isInRangeBox = isWithin7Days && !isSelected;
 
               return (
                 <div
@@ -909,10 +918,8 @@
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
-                    boxShadow: isSelected ? '0 6px 16px rgba(0, 113, 227, 0.3)' : theme.shadow,
+                    boxShadow: isSelected ? '0 4px 12px rgba(0, 113, 227, 0.25)' : theme.shadow,
                     border: borderStyle,
-                    outline: isInRangeBox ? '2px dashed #ff9500' : 'none',
-                    outlineOffset: '2px',
                     transition: 'all 0.25s cubic-bezier(0.25, 1, 0.5, 1)',
                     position: 'relative',
                     userSelect: 'none'
@@ -948,6 +955,8 @@
               {gridDays.map(({ dateStr, dayNum, isCurrentMonth }) => {
                 const isSelected = dateStr === selectedDate;
                 const isToday = dateStr === realTodayStr;
+                const isWithin7Days = next7DaysList.includes(dateStr);
+                const isSeventhDay = dateStr === seventhDayStr;
                 const hasLesson = schedule.some(s => s.date === dateStr);
 
                 let bgColor = isDarkMode ? '#252525' : '#fafafa';
@@ -959,7 +968,16 @@
                   textColor = '#ffffff';
                   borderColor = '#0071e3';
                 } else if (isToday) {
-                  borderColor = '#0071e3';
+                  textColor = '#ff3b30';
+                  borderColor = '#ff3b30';
+                } else if (isSeventhDay) {
+                  bgColor = isDarkMode ? '#3d2612' : '#fff3e0';
+                  textColor = '#d97706';
+                  borderColor = '#d97706';
+                } else if (isWithin7Days) {
+                  bgColor = isDarkMode ? '#241b12' : '#fdf8f2';
+                  textColor = isDarkMode ? '#f6ad55' : '#b45309';
+                  borderColor = '#f6ad55';
                 }
 
                 return (
@@ -975,11 +993,11 @@
                       backgroundColor: bgColor,
                       color: textColor,
                       fontSize: '13px',
-                      fontWeight: isSelected || isToday ? '700' : '500',
+                      fontWeight: isSelected || isToday || isWithin7Days ? '700' : '500',
                       borderRadius: '12px',
                       cursor: 'pointer',
                       position: 'relative',
-                      opacity: isCurrentMonth ? 1 : 0.35,
+                      opacity: isCurrentMonth || isWithin7Days ? 1 : 0.35,
                       border: `1.5px solid ${borderColor}`,
                       boxShadow: isSelected ? '0 4px 12px rgba(0, 113, 227, 0.3)' : 'none',
                       transition: 'all 0.2s'
@@ -1017,7 +1035,7 @@
                 {icons.calendar} {formattedTitle}
               </span>
               <span style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {icons.lightbulb} 雙擊卡片加學員 / 管理
+                雙擊卡片加學員 / 管理
               </span>
             </div>
 
@@ -1037,6 +1055,7 @@
                     style={{ 
                       ...cardStyle, 
                       borderLeft: overlapped ? '5px solid #ff3b30' : '5px solid #0071e3', 
+                      border: overlapped ? '1.5px solid #ff3b30' : `1px solid ${theme.border}`,
                       backgroundColor: overlapped ? (isDarkMode ? '#3a1c1c' : '#fff2f2') : theme.cardBg,
                       cursor: 'pointer', 
                       userSelect: 'none',
@@ -1065,7 +1084,12 @@
                     </div>
 
                     <div style={{ fontSize: '13px', color: theme.textPrimary, marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${theme.border}` }}>
-                      <strong>學員：</strong> {item.enrolledStudents.length > 0 ? item.enrolledStudents.map(s => `● ${s.name}`).join('  ') : '尚無學員報名'}
+                      <strong>學員：</strong> {item.enrolledStudents.length > 0 ? item.enrolledStudents.map(s => (
+                        <span key={s.name} style={{ marginRight: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: s.isPaid ? '#34c759' : '#ff3b30', display: 'inline-block' }}></span>
+                          {s.name}
+                        </span>
+                      )) : '尚無學員報名'}
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
@@ -1159,19 +1183,23 @@
                     border: `1px solid ${theme.border}`, borderRadius: '20px', 
                     boxShadow: '0 10px 30px rgba(0,0,0,0.15)', padding: '16px', zIndex: 1600 
                   }}>
-                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#ff9500', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
+                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#ff9500', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.bell} 課堂與訂場提醒</span>
                       <span style={{ fontSize: '11px', color: theme.textMuted }}>{realTodayStr}</span>
                     </div>
 
-                    <div style={{ fontSize: '13px', color: theme.textPrimary, marginBottom: '10px' }}>
-                      <strong>{icons.location} 明天上課通知 ({tomorrowLessons.length} 堂) [{tomorrowStr}]：</strong>
+                    <div style={{ fontSize: '13px', color: theme.textPrimary, marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '700', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {icons.location} 明天上課通知 ({tomorrowStr})：
+                      </div>
                       {tomorrowLessons.length === 0 ? (
-                        <div style={{ color: theme.textMuted, marginTop: '2px' }}>明天沒有排課</div>
+                        <div style={{ color: theme.textMuted, fontSize: '12px', paddingLeft: '4px' }}>明天沒有排課</div>
                       ) : (
                         tomorrowLessons.map(item => (
-                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', padding: '4px 6px', backgroundColor: theme.cardBg, borderRadius: '4px', border: `1px solid ${isDarkMode ? '#443a1a' : '#ffe082'}` }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.shuttlecock} {item.courseName} ({item.startTime})</span>
+                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', padding: '6px 8px', backgroundColor: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
+                              {icons.shuttlecock} {item.courseName} ({item.startTime})
+                            </span>
                             <button 
                               onClick={() => {
                                 if (item.enrolledStudents.length === 0) { alert('該課堂尚未有學員'); return; }
@@ -1179,7 +1207,7 @@
                                 const match = students.find(s => s.name === firstSt.name);
                                 openWhatsApp(match ? match.phone : '');
                               }}
-                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
                               {icons.whatsapp} WhatsApp
                             </button>
                           </div>
@@ -1188,13 +1216,17 @@
                     </div>
 
                     <div style={{ fontSize: '13px', color: theme.textPrimary }}>
-                      <strong>{icons.calendar} 7 天後課堂 / Book場 ({day7Str})：</strong>
+                      <div style={{ fontWeight: '700', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {icons.calendar} 7 天後課堂 / Book場 ({day7Str})：
+                      </div>
                       {day7Lessons.length === 0 ? (
-                        <div style={{ color: theme.textMuted, marginTop: '2px' }}>7天後 ({day7Str}) 無安排課堂</div>
+                        <div style={{ color: theme.textMuted, fontSize: '12px', paddingLeft: '4px' }}>7天後 ({day7Str}) 無安排課堂</div>
                       ) : (
                         day7Lessons.map(item => (
-                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', padding: '4px 6px', backgroundColor: theme.cardBg, borderRadius: '4px', border: `1px solid ${isDarkMode ? '#443a1a' : '#ffe082'}` }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.shuttlecock} {item.courseName} ({item.startTime})</span>
+                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', padding: '6px 8px', backgroundColor: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
+                              {icons.shuttlecock} {item.courseName} ({item.startTime})
+                            </span>
                             <button 
                               onClick={() => {
                                 if (item.enrolledStudents.length === 0) { alert('該課堂尚未有學員'); return; }
@@ -1202,7 +1234,7 @@
                                 const match = students.find(s => s.name === firstSt.name);
                                 openWhatsApp(match ? match.phone : '');
                               }}
-                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px', backgroundColor: '#0088cc', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
                               {icons.whatsapp} WhatsApp
                             </button>
                           </div>
@@ -1247,9 +1279,14 @@
                     <button 
                       onClick={handleGoToday}
                       style={{ 
-                        height: '28px', padding: '0 10px', backgroundColor: theme.cardBg, color: '#0071e3', 
-                        border: `1px solid ${theme.border}`, borderRadius: '10px', fontSize: '12px', fontWeight: '700', 
-                        cursor: 'pointer', boxShadow: theme.shadow, display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                        height: '28px', padding: '0 12px', 
+                        backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8', 
+                        color: '#0071e3', 
+                        border: 'none', 
+                        borderRadius: '12px', 
+                        fontSize: '12px', fontWeight: '700', 
+                        cursor: 'pointer', 
+                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
                       }}
                       title="回到今天">
                       今
@@ -1896,22 +1933,21 @@
                     )}
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
-                    <input type="date" value={lessonForm.date} onChange={e => {
-                      setLessonForm({...lessonForm, date: e.target.value});
-                      selectDate(e.target.value);
-                    }} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
-                  </div>
-
                   <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
+                      <input type="date" value={lessonForm.date} onChange={e => {
+                        setLessonForm({...lessonForm, date: e.target.value});
+                        selectDate(e.target.value);
+                      }} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
                     </div>
                   </div>
 
@@ -2004,19 +2040,18 @@
                     )}
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
-                    <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
-                  </div>
-
                   <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
+                      <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
                     </div>
                   </div>
 
@@ -2063,7 +2098,7 @@
                     <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.textPrimary }}>
                       學員名單 ({selectedLessonModal.enrolledStudents.length} / {selectedLessonModal.maxCapacity}人)
                     </h4>
-                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 雙擊學員列查看詳情</span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>雙擊學員列查看詳情</span>
                   </div>
                   
                   {selectedLessonModal.enrolledStudents.length === 0 ? (
@@ -2081,7 +2116,10 @@
                         }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
-                            <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.user} {st.name}</strong>
+                            <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: st.isPaid ? '#34c759' : '#ff3b30', display: 'inline-block' }}></span>
+                              {icons.user} {st.name}
+                            </strong>
                             <span style={{ marginLeft: '6px', fontSize: '12px', fontWeight: '700', color: st.isPaid ? '#34c759' : '#ff3b30' }}>
                               ({st.isPaid ? '已付' : '未付'})
                             </span>
