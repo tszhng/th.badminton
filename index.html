@@ -22,17 +22,31 @@
         transform: translateY(0);
       }
     }
+    @keyframes fadeTransition {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .apple-fade-in {
+      animation: fadeTransition 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
   </style>
 </head>
-<body id="app-body" style="margin: 0;">
+<body id="app-body" style="margin: 0; background-color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;">
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.4.7";
-      const LAST_UPDATED = "2026-10-14 02:00";
+      const APP_VERSION = "v4.5.5";
+      const LAST_UPDATED = "2026-10-15 15:10";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -42,24 +56,24 @@
 
       useEffect(() => {
         localStorage.setItem('th_badminton_darkMode', JSON.stringify(isDarkMode));
-        document.body.style.backgroundColor = isDarkMode ? '#121212' : '#f8f9fa';
+        document.body.style.backgroundColor = isDarkMode ? '#121212' : '#f5f5f7';
       }, [isDarkMode]);
 
       const theme = {
-        bg: isDarkMode ? '#121212' : '#f8f9fa',
+        bg: isDarkMode ? '#121212' : '#f5f5f7',
         cardBg: isDarkMode ? '#1e1e1e' : '#ffffff',
-        textPrimary: isDarkMode ? '#e0e0e0' : '#1a1a1a',
-        textSecondary: isDarkMode ? '#a0a0a0' : '#555555',
-        textMuted: isDarkMode ? '#777777' : '#888888',
-        border: isDarkMode ? '#2c2c2c' : '#e0e0e0',
-        inputBg: isDarkMode ? '#2d2d2d' : '#ffffff',
-        inputText: isDarkMode ? '#e0e0e0' : '#333333',
-        inputBorder: isDarkMode ? '#444444' : '#cccccc',
+        textPrimary: isDarkMode ? '#e0e0e0' : '#1d1d1f',
+        textSecondary: isDarkMode ? '#a0a0a0' : '#86868b',
+        textMuted: isDarkMode ? '#777777' : '#aeaeb2',
+        border: isDarkMode ? '#2c2c2c' : '#e5e5ea',
+        inputBg: isDarkMode ? '#2d2d2d' : '#f2f2f7',
+        inputText: isDarkMode ? '#e0e0e0' : '#1d1d1f',
+        inputBorder: isDarkMode ? '#444444' : '#d1d1d6',
         modalBg: isDarkMode ? '#1e1e1e' : '#ffffff',
-        tableHeader: isDarkMode ? '#252525' : '#f1f3f5',
-        shadow: isDarkMode ? '0 1px 3px rgba(0,0,0,0.4)' : '0 1px 3px rgba(0,0,0,0.05)',
-        accent: '#5b8bf7',
-        accentHover: '#4a75e0'
+        tableHeader: isDarkMode ? '#252525' : '#f2f2f7',
+        shadow: isDarkMode ? '0 4px 20px rgba(0,0,0,0.4)' : '0 4px 24px rgba(0, 0, 0, 0.06)',
+        accent: '#0071e3',
+        accentHover: '#0077ed'
       };
 
       const getRealTodayString = () => {
@@ -81,7 +95,6 @@
       const [activeTab, setActiveTab] = useState('schedule');
       const [expandedPayers, setExpandedPayers] = useState({});
 
-      // 滾動偵測狀態：用於 Sticky Header 與左上角大標題顯隱切換
       const [scrolled, setScrolled] = useState(false);
 
       useEffect(() => {
@@ -96,7 +109,6 @@
         return () => window.removeEventListener('scroll', handleScroll);
       }, []);
 
-      // 切換 Tab 時自動滾動回頂部
       useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }, [activeTab]);
@@ -108,7 +120,6 @@
         { id: 'settings', label: '設定', icon: 'settings', title: '設定' }
       ];
 
-      // 取得當前頁面對應的標題
       const currentTabObj = tabs.find(t => t.id === activeTab) || tabs[0];
 
       const [showDropdownNotif, setShowDropdownNotif] = useState(false);
@@ -142,30 +153,28 @@
         return () => window.removeEventListener('resize', updateCapsulePosition);
       }, [activeTab]);
 
-      const touchStartX = useRef(null);
-      const touchEndX = useRef(null);
+      const weekDateRefs = useRef({});
 
-      const handleTouchStart = (e) => {
-        touchStartX.current = e.targetTouches[0].clientX;
-      };
-
-      const handleTouchMove = (e) => {
-        touchEndX.current = e.targetTouches[0].clientX;
-      };
-
-      const handleTouchEnd = () => {
-        if (!touchStartX.current || !touchEndX.current) return;
-        const distance = touchStartX.current - touchEndX.current;
-        const minSwipeDistance = 50;
-
-        if (distance > minSwipeDistance) {
-          handleDateSwipe('next');
-        } else if (distance < -minSwipeDistance) {
-          handleDateSwipe('prev');
+      const selectDate = (dateStr) => {
+        setSelectedDate(dateStr);
+        setSelectedMonth(getMonthString(dateStr));
+        if (weekDateRefs.current[dateStr]) {
+          weekDateRefs.current[dateStr].scrollIntoView({
+            behavior: 'smooth',
+            inline: 'center',
+            block: 'nearest'
+          });
         }
+      };
 
-        touchStartX.current = null;
-        touchEndX.current = null;
+      const handleGoToday = () => {
+        const realToday = getRealTodayString();
+        setTodayStr(realToday);
+        selectDate(realToday);
+      };
+
+      const switchView = (mode) => {
+        setCalendarViewMode(mode);
       };
 
       useEffect(() => {
@@ -289,7 +298,7 @@
         courtFee: 150,
         courtPayer: 'TH Coach',
         customCourtPayer: '',
-        date: todayStr,
+        date: selectedDate,
         startTime: '19:00',
         endTime: '21:00',
         court: ''
@@ -342,7 +351,7 @@
           const startB = timeToMinutes(other.startTime || other.time);
           const endB = timeToMinutes(other.endTime) || (startB + 60);
 
-          return startA < endB && startB < endA;
+          return startA < endB && startB < startA;
         });
       };
 
@@ -402,7 +411,7 @@
       const getNext7DaysRange = () => {
         const range = [];
         const baseDate = new Date();
-        for (let i = 1; i <= 7; i++) {
+        for (let i = 0; i < 7; i++) {
           const d = new Date(baseDate);
           d.setDate(d.getDate() + i);
           range.push(d.toISOString().split('T')[0]);
@@ -413,22 +422,25 @@
       const next7DaysList = getNext7DaysRange();
       const seventhDayStr = next7DaysList[6];
 
-      const getCurrentTwoWeeksDays = (dateStr) => {
-        const parts = dateStr.split('-');
-        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-        const day = d.getDay();
-        const diff = d.getDate() - day;
-        
-        const twoWeeksDays = [];
-        for (let i = 0; i < 14; i++) {
-          const nextD = new Date(Number(parts[0]), Number(parts[1]) - 1, diff + i);
-          const y = nextD.getFullYear();
-          const m = String(nextD.getMonth() + 1).padStart(2, '0');
-          const dayNum = String(nextD.getDate()).padStart(2, '0');
+      const getExtendedWeeksDays = () => {
+        const days = [];
+        const base = new Date();
+        base.setDate(base.getDate() - 30);
+        for (let i = 0; i < 75; i++) {
+          const d = new Date(base);
+          d.setDate(base.getDate() + i);
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, '0');
+          const dayNum = String(d.getDate()).padStart(2, '0');
           const formatted = `${y}-${m}-${dayNum}`;
-          twoWeeksDays.push({ dateStr: formatted, dayNum: Number(dayNum) });
+          const weekNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+          days.push({
+            dateStr: formatted,
+            dayNum: Number(dayNum),
+            weekName: weekNames[d.getDay()]
+          });
         }
-        return twoWeeksDays;
+        return days;
       };
 
       const getFull6WeeksGrid = (yearMonth) => {
@@ -457,24 +469,6 @@
           nextDay++;
         }
         return days;
-      };
-
-      const handleDateSwipe = (direction) => {
-        const parts = selectedDate.split('-');
-        const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
-        
-        if (calendarViewMode === 'week') {
-          d.setDate(d.getDate() + (direction === 'next' ? 14 : -14));
-        } else {
-          d.setMonth(d.getMonth() + (direction === 'next' ? 1 : -1));
-        }
-        
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const dayStr = String(d.getDate()).padStart(2, '0');
-        const newStr = `${y}-${m}-${dayStr}`;
-        setSelectedDate(newStr);
-        setSelectedMonth(getMonthString(newStr));
       };
 
       const daySchedule = schedule
@@ -817,17 +811,17 @@
 
       const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
 
-      const inputStyle = { width: '100%', padding: '6px 8px', borderRadius: '6px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, boxSizing: 'border-box', fontSize: '13px', appearance: 'none', WebkitAppearance: 'none' };
-      const cardStyle = { backgroundColor: theme.cardBg, color: theme.textPrimary, padding: '12px', borderRadius: '10px', marginBottom: '12px', boxSizing: 'border-box', width: '100%', boxShadow: theme.shadow, border: `1px solid ${theme.border}` };
-      const weekLabels = ['日', '一', '二', '三', '四', '五', '六'];
+      const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, boxSizing: 'border-box', fontSize: '14px', outline: 'none' };
+      const cardStyle = { backgroundColor: theme.cardBg, color: theme.textPrimary, padding: '16px', borderRadius: '24px', marginBottom: '16px', boxSizing: 'border-box', width: '100%', boxShadow: theme.shadow, border: `1px solid ${theme.border}` };
+      const weekLabels = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
       const icons = {
         shuttlecock: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3 7-3 3-3-3 3-7z"/><path d="M9 12l-5 8h16l-5-8"/><line x1="12" y1="12" x2="12" y2="22"/></svg>,
         calendar: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
         revenue: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
         user: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-        settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
-        sun: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="1" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
+        settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+        sun: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
         moon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
         bell: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
         whatsapp: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>,
@@ -851,7 +845,7 @@
 
       const closeButtonStyle = { 
         border: 'none', 
-        backgroundColor: isDarkMode ? '#333' : '#e0e0e0', 
+        backgroundColor: isDarkMode ? '#333' : '#e5e5ea', 
         color: theme.textPrimary, 
         width: '32px', 
         height: '32px', 
@@ -864,15 +858,244 @@
 
       const formatAmount = (num) => showAmount ? `$${Number(num).toFixed(0)}` : '****';
 
+      const renderWeek = () => {
+        const extendedDays = getExtendedWeeksDays();
+        return (
+          <div className="no-scrollbar" style={{ display: 'flex', overflowX: 'auto', gap: '8px', paddingBottom: '4px', scrollBehavior: 'smooth' }}>
+            {extendedDays.map(({ dateStr, dayNum, weekName }) => {
+              const isSelected = dateStr === selectedDate;
+              const isToday = dateStr === realTodayStr;
+              const isWithin7Days = next7DaysList.includes(dateStr);
+              const isSeventhDay = dateStr === seventhDayStr;
+              const hasLesson = schedule.some(s => s.date === dateStr);
+
+              let bgColor = isDarkMode ? '#1e1e1e' : '#ffffff';
+              let textColor = theme.textPrimary;
+              let subColor = theme.textSecondary;
+
+              if (isSelected) {
+                bgColor = '#0071e3';
+                textColor = '#ffffff';
+                subColor = 'rgba(255,255,255,0.85)';
+              } else if (isSeventhDay) {
+                bgColor = isDarkMode ? '#3b2511' : '#fff3e0';
+                textColor = '#ff9500';
+                subColor = '#ff9500';
+              }
+
+              let borderStyle = `1px solid ${theme.border}`;
+              if (isSeventhDay && !isSelected) {
+                borderStyle = '2px solid #ff9500';
+              } else if (isToday && !isSelected) {
+                borderStyle = '2px solid #0071e3';
+              }
+
+              const isInRangeBox = isWithin7Days && !isSelected;
+
+              return (
+                <div
+                  key={dateStr}
+                  ref={el => weekDateRefs.current[dateStr] = el}
+                  onClick={() => selectDate(dateStr)}
+                  style={{
+                    flexShrink: 0,
+                    width: '52px',
+                    height: '72px',
+                    borderRadius: '16px',
+                    backgroundColor: bgColor,
+                    color: textColor,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    cursor: 'pointer',
+                    boxShadow: isSelected ? '0 6px 16px rgba(0, 113, 227, 0.3)' : theme.shadow,
+                    border: borderStyle,
+                    outline: isInRangeBox ? '2px dashed #ff9500' : 'none',
+                    outlineOffset: '2px',
+                    transition: 'all 0.25s cubic-bezier(0.25, 1, 0.5, 1)',
+                    position: 'relative',
+                    userSelect: 'none'
+                  }}>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: subColor, textTransform: 'uppercase' }}>
+                    {weekName}
+                  </span>
+                  <span style={{ fontSize: '18px', fontWeight: '700', marginTop: '2px' }}>
+                    {dayNum}
+                  </span>
+                  {hasLesson && (
+                    <div style={{
+                      width: '5px', height: '5px', borderRadius: '50%',
+                      backgroundColor: isSelected ? '#ffffff' : '#0071e3',
+                      position: 'absolute', bottom: '6px'
+                    }} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      };
+
+      const renderMonth = () => {
+        const gridDays = getFull6WeeksGrid(selectedMonth);
+        return (
+          <div style={{ backgroundColor: theme.cardBg, borderRadius: '24px', padding: '14px', boxShadow: theme.shadow, border: `1px solid ${theme.border}` }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: theme.textSecondary, marginBottom: '8px' }}>
+              {weekLabels.map((w, idx) => <div key={idx}>{w}</div>)}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}>
+              {gridDays.map(({ dateStr, dayNum, isCurrentMonth }) => {
+                const isSelected = dateStr === selectedDate;
+                const isToday = dateStr === realTodayStr;
+                const hasLesson = schedule.some(s => s.date === dateStr);
+
+                let bgColor = isDarkMode ? '#252525' : '#fafafa';
+                let textColor = isCurrentMonth ? theme.textPrimary : theme.textMuted;
+                let borderColor = theme.border;
+
+                if (isSelected) {
+                  bgColor = '#0071e3';
+                  textColor = '#ffffff';
+                  borderColor = '#0071e3';
+                } else if (isToday) {
+                  borderColor = '#0071e3';
+                }
+
+                return (
+                  <div
+                    key={dateStr}
+                    onClick={() => selectDate(dateStr)}
+                    style={{
+                      height: '46px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: bgColor,
+                      color: textColor,
+                      fontSize: '13px',
+                      fontWeight: isSelected || isToday ? '700' : '500',
+                      borderRadius: '12px',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      opacity: isCurrentMonth ? 1 : 0.35,
+                      border: `1.5px solid ${borderColor}`,
+                      boxShadow: isSelected ? '0 4px 12px rgba(0, 113, 227, 0.3)' : 'none',
+                      transition: 'all 0.2s'
+                    }}>
+                    {dayNum}
+                    {hasLesson && (
+                      <div style={{
+                        width: '4px', height: '4px', borderRadius: '50%',
+                        backgroundColor: isSelected ? '#ffffff' : '#0071e3',
+                        position: 'absolute', bottom: '5px'
+                      }} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      };
+
+      const renderTodo = () => {
+        const [year, month, day] = selectedDate.split('-');
+        const formattedTitle = `${year}-${month}-${day} 的課節`;
+
+        return (
+          <div className="apple-fade-in">
+            <button 
+              onClick={handleOpenAddModal}
+              style={{ width: '100%', padding: '14px', backgroundColor: '#34c759', color: '#fff', border: 'none', borderRadius: '16px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '16px', boxShadow: '0 4px 16px rgba(52, 199, 89, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+              {icons.plus} 新增課堂
+            </button>
+
+            <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontSize: '15px', fontWeight: '700', color: theme.textPrimary, letterSpacing: '-0.3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {icons.calendar} {formattedTitle}
+              </span>
+              <span style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {icons.lightbulb} 雙擊卡片加學員 / 管理
+              </span>
+            </div>
+
+            {daySchedule.length === 0 ? (
+              <div style={{ ...cardStyle, textAlign: 'center', color: theme.textMuted, padding: '24px', fontSize: '14px' }}>
+                今天沒有排課記錄
+              </div>
+            ) : (
+              daySchedule.map(item => {
+                const totalFee = calculateTotalFee(item);
+                const overlapped = isLessonOverlapped(item, daySchedule);
+
+                return (
+                  <div 
+                    key={item.id} 
+                    onDoubleClick={() => setSelectedLessonModal(item)}
+                    style={{ 
+                      ...cardStyle, 
+                      borderLeft: overlapped ? '5px solid #ff3b30' : '5px solid #0071e3', 
+                      backgroundColor: overlapped ? (isDarkMode ? '#3a1c1c' : '#fff2f2') : theme.cardBg,
+                      cursor: 'pointer', 
+                      userSelect: 'none',
+                      position: 'relative'
+                    }}>
+                    
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <strong style={{ fontSize: '16px', fontWeight: '700', color: overlapped ? '#ff3b30' : theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {icons.shuttlecock} {item.courseName}
+                      </strong>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {overlapped && (
+                          <span style={{ fontSize: '11px', backgroundColor: '#ff3b30', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                            {icons.warning} 時間重疊
+                          </span>
+                        )}
+                        <span style={{ fontSize: '13px', fontWeight: '700', color: isDarkMode ? '#30d158' : '#34c759' }}>
+                          HK$ {totalFee}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: '13px', color: theme.textSecondary, margin: '8px 0', lineHeight: '1.5' }}>
+                      <div>{icons.calendar} <strong>{item.startTime || item.time}{item.endTime ? ` - ${item.endTime}` : ''}</strong></div>
+                      <div>{icons.location} {item.court || '體育館'}</div>
+                    </div>
+
+                    <div style={{ fontSize: '13px', color: theme.textPrimary, marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${theme.border}` }}>
+                      <strong>學員：</strong> {item.enrolledStudents.length > 0 ? item.enrolledStudents.map(s => `● ${s.name}`).join('  ') : '尚無學員報名'}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); addToAppleCalendar(item); }} 
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#e0f2fe', color: '#0284c7', border: 'none', borderRadius: '12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                        {icons.calendarPlus} 匯出
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); handleCancelLesson(item.id); }} 
+                        style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
+                        {icons.xCircle} 取消
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        );
+      };
+
       return (
         <div style={{ 
           maxWidth: '480px', margin: '0 auto', 
           paddingTop: 'calc(10px + env(safe-area-inset-top, 10px))', 
-          paddingLeft: '15px', paddingRight: '15px',
+          paddingLeft: '16px', paddingRight: '16px',
           paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 20px))', 
-          fontFamily: '-apple-system, BlinkMacSystemFont, sans-serif', backgroundColor: theme.bg, color: theme.textPrimary, minHeight: '100vh', boxSizing: 'border-box', transition: 'background-color 0.2s, color 0.2s' 
+          fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif', backgroundColor: theme.bg, color: theme.textPrimary, minHeight: '100vh', boxSizing: 'border-box', transition: 'background-color 0.2s, color 0.2s' 
         }}>
-          {/* iOS 風格：動態毛玻璃置頂標題 (Sticky Header with Blur) */}
           <div style={{
             position: 'fixed',
             top: 0,
@@ -880,7 +1103,7 @@
             right: 0,
             height: 'calc(44px + env(safe-area-inset-top, 0px))',
             paddingTop: 'env(safe-area-inset-top, 0px)',
-            backgroundColor: isDarkMode ? 'rgba(18, 18, 18, 0.75)' : 'rgba(248, 249, 250, 0.75)',
+            backgroundColor: isDarkMode ? 'rgba(18, 18, 18, 0.8)' : 'rgba(245, 245, 247, 0.8)',
             backdropFilter: 'blur(20px)',
             WebkitBackdropFilter: 'blur(20px)',
             borderBottom: `1px solid ${theme.border}`,
@@ -896,20 +1119,18 @@
             margin: '0 auto',
             boxSizing: 'border-box'
           }}>
-            <span style={{ fontSize: '16px', fontWeight: 'bold', color: theme.textPrimary, letterSpacing: '0.5px' }}>
+            <span style={{ fontSize: '16px', fontWeight: '700', color: theme.textPrimary, letterSpacing: '-0.3px' }}>
               {currentTabObj.title}
             </span>
           </div>
 
-          {/* 頂部控制列（右側圖示 + 左側大標題聯動） */}
-          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '15px', position: 'relative', zIndex: 1100, minHeight: '36px' }}>
-            {/* iOS 風格：頂部左上角大標題（向下滾動時漸隱） */}
+          <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px', position: 'relative', zIndex: 1100, minHeight: '38px' }}>
             <h1 style={{ 
               margin: 0, 
-              fontSize: '28px', 
+              fontSize: '32px', 
               fontWeight: '800', 
               color: theme.textPrimary, 
-              letterSpacing: '-0.5px',
+              letterSpacing: '-0.8px',
               opacity: scrolled ? 0 : 1,
               transform: scrolled ? 'translateY(-6px)' : 'translateY(0)',
               transition: 'opacity 0.2s ease-out, transform 0.2s ease-out',
@@ -923,8 +1144,8 @@
                 <button 
                   onClick={() => setShowDropdownNotif(!showDropdownNotif)}
                   style={{ 
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', 
-                    backgroundColor: theme.cardBg, color: '#ff9800', border: `1px solid ${theme.border}`, 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', 
+                    backgroundColor: theme.cardBg, color: '#ff9500', border: `1px solid ${theme.border}`, 
                     borderRadius: '50%', cursor: 'pointer', boxShadow: theme.shadow 
                   }}
                   title="課堂提醒">
@@ -933,17 +1154,17 @@
 
                 {showDropdownNotif && (
                   <div style={{ 
-                    position: 'absolute', right: 0, top: '40px', width: '300px', 
+                    position: 'absolute', right: 0, top: '42px', width: '300px', 
                     backgroundColor: theme.modalBg, color: theme.textPrimary, 
-                    border: `1px solid ${theme.border}`, borderRadius: '10px', 
-                    boxShadow: '0 4px 20px rgba(0,0,0,0.15)', padding: '12px', zIndex: 1600 
+                    border: `1px solid ${theme.border}`, borderRadius: '20px', 
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.15)', padding: '16px', zIndex: 1600 
                   }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '13px', color: '#e65100', marginBottom: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}`, paddingBottom: '6px' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>{icons.bell} 課堂與訂場提醒</span>
-                      <span style={{ fontSize: '10px', color: theme.textMuted }}>{realTodayStr}</span>
+                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#ff9500', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.bell} 課堂與訂場提醒</span>
+                      <span style={{ fontSize: '11px', color: theme.textMuted }}>{realTodayStr}</span>
                     </div>
 
-                    <div style={{ fontSize: '12px', color: theme.textPrimary, marginBottom: '10px' }}>
+                    <div style={{ fontSize: '13px', color: theme.textPrimary, marginBottom: '10px' }}>
                       <strong>{icons.location} 明天上課通知 ({tomorrowLessons.length} 堂) [{tomorrowStr}]：</strong>
                       {tomorrowLessons.length === 0 ? (
                         <div style={{ color: theme.textMuted, marginTop: '2px' }}>明天沒有排課</div>
@@ -966,7 +1187,7 @@
                       )}
                     </div>
 
-                    <div style={{ fontSize: '12px', color: theme.textPrimary }}>
+                    <div style={{ fontSize: '13px', color: theme.textPrimary }}>
                       <strong>{icons.calendar} 7 天後課堂 / Book場 ({day7Str})：</strong>
                       {day7Lessons.length === 0 ? (
                         <div style={{ color: theme.textMuted, marginTop: '2px' }}>7天後 ({day7Str}) 無安排課堂</div>
@@ -995,7 +1216,7 @@
               <button 
                 onClick={() => setIsDarkMode(!isDarkMode)} 
                 style={{ 
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', 
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', 
                   backgroundColor: theme.cardBg, color: theme.textPrimary, border: `1px solid ${theme.border}`, 
                   borderRadius: '50%', cursor: 'pointer', boxShadow: theme.shadow 
                 }}
@@ -1005,323 +1226,138 @@
             </div>
           </header>
 
-          {/* 內容區域 */}
-          <div key={activeTab} style={{ animation: 'fadeInUp 0.35s cubic-bezier(0.25, 1, 0.5, 1) forwards' }}>
-            {/* TAB 1: 課表 */}
+          <div key={activeTab} className="apple-fade-in">
             {activeTab === 'schedule' && (
               <div>
-                <div 
-                  onTouchStart={handleTouchStart}
-                  onTouchMove={handleTouchMove}
-                  onTouchEnd={handleTouchEnd}
-                  style={{ ...cardStyle, padding: '10px', touchAction: 'pan-y' }}>
-                  
-                  {/* 日曆頂部列：左側年月，右側按鈕 */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontSize: '14px', fontWeight: 'bold', color: theme.textPrimary }}>
-                      {selectedMonth}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+                    <span style={{ fontSize: '18px', fontWeight: '800', color: theme.textPrimary, textTransform: 'uppercase', letterSpacing: '-0.3px' }}>
+                      {(() => {
+                        const [y, m] = selectedMonth.split('-');
+                        const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                        return monthNames[Number(m)] || m;
+                      })()}
                     </span>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: theme.textSecondary }}>
+                      {selectedMonth.split('-')[0]}
+                    </span>
+                  </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <button 
+                      onClick={handleGoToday}
+                      style={{ 
+                        height: '28px', padding: '0 10px', backgroundColor: theme.cardBg, color: '#0071e3', 
+                        border: `1px solid ${theme.border}`, borderRadius: '10px', fontSize: '12px', fontWeight: '700', 
+                        cursor: 'pointer', boxShadow: theme.shadow, display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                      }}
+                      title="回到今天">
+                      今
+                    </button>
+
+                    <div style={{ 
+                      backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8', 
+                      borderRadius: '12px', padding: '2px', display: 'flex', position: 'relative', width: '110px', height: '28px', boxSizing: 'border-box' 
+                    }}>
+                      <div style={{
+                        position: 'absolute', top: '2px', bottom: '2px',
+                        left: calendarViewMode === 'week' ? '2px' : 'calc(50% + 1px)',
+                        width: 'calc(50% - 3px)',
+                        backgroundColor: theme.cardBg, borderRadius: '10px',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                        transition: 'left 0.25s cubic-bezier(0.25, 1, 0.5, 1)'
+                      }} />
                       <button 
-                        onClick={() => { 
-                          const realToday = getRealTodayString();
-                          setTodayStr(realToday);
-                          setSelectedDate(realToday); 
-                          setSelectedMonth(getMonthString(realToday)); 
-                        }} 
-                        style={{ 
-                          width: '30px', height: '30px', borderRadius: '50%', 
-                          backgroundColor: isDarkMode ? '#1b3320' : '#e8f5e9', color: '#2e7d32', 
-                          border: `1px solid ${isDarkMode ? '#2d5a36' : '#c8e6c9'}`, 
-                          fontWeight: 'bold', fontSize: '12px', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: theme.shadow
-                        }}
-                        title="回到今天">
-                        今
+                        onClick={() => switchView('week')}
+                        style={{ flex: 1, border: 'none', background: 'transparent', color: calendarViewMode === 'week' ? theme.textPrimary : theme.textSecondary, fontSize: '12px', fontWeight: '600', padding: '0', cursor: 'pointer', zIndex: 1, textAlign: 'center' }}>
+                        周
                       </button>
-
                       <button 
-                        onClick={() => setCalendarViewMode(calendarViewMode === 'week' ? 'month' : 'week')}
-                        style={{ 
-                          width: '30px', height: '30px', borderRadius: '50%', 
-                          backgroundColor: isDarkMode ? '#1a2936' : '#e3f2fd', color: '#1565c0', 
-                          border: `1px solid ${isDarkMode ? '#204060' : '#bbdefb'}`, 
-                          fontWeight: 'bold', fontSize: '12px', cursor: 'pointer',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: theme.shadow
-                        }}
-                        title={calendarViewMode === 'week' ? '切換為月曆模式' : '切換為周曆模式'}>
-                        {calendarViewMode === 'week' ? '周' : '月'}
+                        onClick={() => switchView('month')}
+                        style={{ flex: 1, border: 'none', background: 'transparent', color: calendarViewMode === 'month' ? theme.textPrimary : theme.textSecondary, fontSize: '12px', fontWeight: '600', padding: '0', cursor: 'pointer', zIndex: 1, textAlign: 'center' }}>
+                        月
                       </button>
                     </div>
                   </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '12px', fontWeight: 'bold', color: theme.textSecondary, marginBottom: '6px' }}>
-                    {weekLabels.map((w, idx) => <div key={idx}>{w}</div>)}
-                  </div>
-                  
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center' }}>
-                    {calendarViewMode === 'week' ? (
-                      getCurrentTwoWeeksDays(selectedDate).map(({ dateStr, dayNum }) => {
-                        const hasLesson = schedule.some(s => s.date === dateStr);
-                        const isSelected = dateStr === selectedDate;
-                        const isToday = dateStr === realTodayStr;
-                        const isNext7Days = next7DaysList.includes(dateStr);
-                        const isSeventhDay = dateStr === seventhDayStr;
-
-                        let bgColor = isDarkMode ? '#252525' : '#f0f0f0';
-                        let textColor = theme.textPrimary;
-
-                        if (isNext7Days) { 
-                          if (isSeventhDay) {
-                            bgColor = '#ff9800';
-                            textColor = '#ffffff';
-                          } else {
-                            bgColor = isDarkMode ? '#3b2811' : '#fff3e0';
-                            textColor = '#e65100'; 
-                          }
-                        }
-
-                        if (isSelected) { 
-                          bgColor = '#5b8bf7'; 
-                          textColor = '#fff'; 
-                        }
-
-                        return (
-                          <div 
-                            key={dateStr} 
-                            onClick={() => { setSelectedDate(dateStr); setSelectedMonth(dateStr.substring(0, 7)); }} 
-                            style={{ 
-                              height: '36px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-                              backgroundColor: bgColor, color: textColor, fontSize: '13px', 
-                              fontWeight: isSelected || isToday || isNext7Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
-                              width: '36px', margin: '0 auto', borderRadius: '50%', boxSizing: 'border-box',
-                              boxShadow: isToday && !isSelected ? 'inset 0 0 0 2px #5b8bf7' : 'none'
-                            }}>
-                            {dayNum}
-                            {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSeventhDay ? '#fff' : '#e57373', position: 'absolute', bottom: '3px' }} />}
-                          </div>
-                        );
-                      })
-                    ) : (
-                      getFull6WeeksGrid(selectedMonth).map(({ dateStr, dayNum, isCurrentMonth }) => {
-                        const hasLesson = schedule.some(s => s.date === dateStr);
-                        const isSelected = dateStr === selectedDate;
-                        const isToday = dateStr === realTodayStr;
-                        const isNext7Days = next7DaysList.includes(dateStr);
-                        const isSeventhDay = dateStr === seventhDayStr;
-
-                        let bgColor = isDarkMode ? '#252525' : '#f0f0f0';
-                        let textColor = isCurrentMonth ? theme.textPrimary : theme.textMuted;
-
-                        if (isNext7Days) { 
-                          if (isSeventhDay) {
-                            bgColor = '#ff9800';
-                            textColor = '#ffffff';
-                          } else {
-                            bgColor = isDarkMode ? '#3b2811' : '#fff3e0';
-                            textColor = isCurrentMonth ? '#e65100' : '#ffb74d'; 
-                          }
-                        }
-
-                        if (isSelected) { 
-                          bgColor = '#5b8bf7'; 
-                          textColor = '#fff'; 
-                        }
-
-                        return (
-                          <div 
-                            key={dateStr} 
-                            onClick={() => { setSelectedDate(dateStr); if (!isCurrentMonth) setSelectedMonth(dateStr.substring(0, 7)); }} 
-                            style={{ 
-                              height: '34px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', 
-                              backgroundColor: bgColor, color: textColor, fontSize: '13px', 
-                              fontWeight: isSelected || isToday || isNext7Days ? 'bold' : 'normal', position: 'relative', cursor: 'pointer',
-                              opacity: isCurrentMonth ? 1 : 0.5,
-                              width: '34px', margin: '1px auto', borderRadius: '50%', boxSizing: 'border-box',
-                              boxShadow: isToday && !isSelected ? 'inset 0 0 0 2px #5b8bf7' : 'none'
-                            }}>
-                            {dayNum}
-                            {hasLesson && <div style={{ width: '4px', height: '4px', borderRadius: '50%', backgroundColor: isSelected || isSeventhDay ? '#fff' : '#e57373', position: 'absolute', bottom: '2px' }} />}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
                 </div>
 
-                <button 
-                  onClick={handleOpenAddModal}
-                  style={{ width: '100%', padding: '12px', backgroundColor: '#4eac6d', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '15px', boxShadow: theme.shadow, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                  {icons.plus} 新增課堂
-                </button>
-
-                <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>{icons.calendar} {selectedDate} 的課節 ({daySchedule.length})：</span>
-                  <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '3px' }}>{icons.lightbulb} 雙擊卡片加人/管理</span>
+                <div style={{ marginBottom: '18px' }}>
+                  {calendarViewMode === 'week' ? renderWeek() : renderMonth()}
                 </div>
 
-                {daySchedule.length === 0 ? (
-                  <div style={{ ...cardStyle, textAlign: 'center', color: theme.textMuted, padding: '20px' }}>今天沒有排課記錄</div>
-                ) : (
-                  daySchedule.map(item => {
-                    const enrolledCount = item.enrolledStudents.length;
-                    const totalFee = calculateTotalFee(item);
-                    const overlapped = isLessonOverlapped(item, daySchedule);
-
-                    return (
-                      <div 
-                        key={item.id} 
-                        onDoubleClick={() => setSelectedLessonModal(item)}
-                        style={{ 
-                          ...cardStyle, 
-                          borderLeft: overlapped ? '5px solid #d32f2f' : '5px solid #5b8bf7', 
-                          backgroundColor: overlapped ? (isDarkMode ? '#3a1c1c' : '#ffebee') : theme.cardBg,
-                          cursor: 'pointer', 
-                          userSelect: 'none',
-                          position: 'relative'
-                        }}>
-                        
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <strong style={{ fontSize: '15px', color: overlapped ? '#c62828' : theme.textPrimary, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            {icons.shuttlecock} {item.courseName}
-                          </strong>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {overlapped && (
-                              <span style={{ fontSize: '11px', backgroundColor: '#d32f2f', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                {icons.warning} 時間重疊
-                              </span>
-                            )}
-                            <span style={{ fontSize: '13px', fontWeight: 'bold', color: isDarkMode ? '#81c784' : '#2b580c' }}>
-                              預計學費: HK$ {totalFee}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div style={{ fontSize: '12px', color: overlapped ? '#ef5350' : theme.textSecondary, margin: '6px 0', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-                          {icons.calendar} {item.date} <strong>{item.startTime || item.time}{item.endTime ? ` - ${item.endTime}` : ''}</strong> | {icons.location} {item.court}
-                          <br />
-                          {icons.money} 課堂費: HK${item.coachFee}/{item.feeMode === 'per_person' ? '人' : '堂'} | 場地費: HK${item.courtFee} ({item.courtPayer || '待定'})
-                        </div>
-
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', margin: '8px 0' }}>
-                          {Array.from({ length: item.maxCapacity }).map((_, idx) => {
-                            const student = item.enrolledStudents[idx];
-                            let boxColor = isDarkMode ? '#333333' : '#e0e0e0';
-                            if (student) {
-                              boxColor = student.isPaid ? '#4eac6d' : '#5b8bf7';
-                            }
-                            return (
-                              <div 
-                                key={idx} 
-                                title={student ? `${student.name} (${student.isPaid ? '已付' : '未付'})` : '空席'}
-                                style={{ 
-                                  width: '14px', height: '14px', borderRadius: '3px', backgroundColor: boxColor,
-                                  border: '1px solid rgba(0,0,0,0.1)' 
-                                }} 
-                              />
-                            );
-                          })}
-                        </div>
-
-                        <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>
-                          學員名單：{enrolledCount > 0 ? item.enrolledStudents.map(s => s.name).join(', ') : '尚無學員（雙擊卡片新增）'}
-                        </div>
-
-                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); addToAppleCalendar(item); }} 
-                            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#78c1cc', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                            {icons.calendarPlus} 加入行事曆
-                          </button>
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); handleCancelLesson(item.id); }} 
-                            style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#e57373', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                            {icons.xCircle} 取消排課
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+                {renderTodo()}
               </div>
             )}
 
-            {/* TAB 2: 收支頁面 */}
             {activeTab === 'revenue' && (
               <div>
                 <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '6px 10px', fontSize: '14px', borderRadius: '6px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }} />
+                  <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '8px 12px', fontSize: '14px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }} />
                   
                   <button 
                     onClick={() => setShowAmount(!showAmount)} 
-                    style={{ display: 'flex', alignItems: 'center', gap: '5px', padding: '6px 12px', backgroundColor: showAmount ? (isDarkMode ? '#333' : '#e0e0e0') : '#5b8bf7', color: showAmount ? theme.textPrimary : '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: showAmount ? theme.inputBg : '#0071e3', color: showAmount ? theme.textPrimary : '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
                     {showAmount ? icons.eyeOff : icons.eye}
                     <span>{showAmount ? '隱藏金額' : '顯示金額'}</span>
                   </button>
                 </div>
 
-                <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', textAlign: 'center', padding: '12px 8px' }}>
-                  <div style={{ backgroundColor: isDarkMode ? '#1b3320' : '#f1f8e9', padding: '8px', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '11px', color: isDarkMode ? '#81c784' : '#558b2f', marginBottom: '2px', fontWeight: 'bold' }}>預計收入 (全月已排課)</div>
-                    <div style={{ fontSize: '15px', fontWeight: 'bold', color: isDarkMode ? '#a5d6a7' : '#33691e' }}>{formatAmount(estimatedIncome)}</div>
+                <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center', padding: '14px' }}>
+                  <div style={{ backgroundColor: isDarkMode ? '#1b3320' : '#f2f9f4', padding: '12px', borderRadius: '16px' }}>
+                    <div style={{ fontSize: '11px', color: '#34c759', marginBottom: '4px', fontWeight: '700' }}>預計收入 (全月已排課)</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#34c759' }}>{formatAmount(estimatedIncome)}</div>
                   </div>
-                  <div style={{ backgroundColor: isDarkMode ? '#1a3322' : '#e8f5e9', padding: '8px', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '11px', color: isDarkMode ? '#81c784' : '#2e7d32', marginBottom: '2px', fontWeight: 'bold' }}>總收入 (已上堂已繳費)</div>
-                    <div style={{ fontSize: '15px', fontWeight: 'bold', color: isDarkMode ? '#a5d6a7' : '#1b5e20' }}>{formatAmount(totalIncome)}</div>
+                  <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#f0f6ff', padding: '12px', borderRadius: '16px' }}>
+                    <div style={{ fontSize: '11px', color: '#0071e3', marginBottom: '4px', fontWeight: '700' }}>總收入 (已上堂已繳費)</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#0071e3' }}>{formatAmount(totalIncome)}</div>
                   </div>
-                  <div style={{ backgroundColor: isDarkMode ? '#3a1c1c' : '#ffebee', padding: '8px', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '11px', color: isDarkMode ? '#e57373' : '#c62828', marginBottom: '2px', fontWeight: 'bold' }}>總支出 (場地)</div>
-                    <div style={{ fontSize: '15px', fontWeight: 'bold', color: isDarkMode ? '#ef9a9a' : '#b71c1c' }}>{formatAmount(totalExpense)}</div>
+                  <div style={{ backgroundColor: isDarkMode ? '#3a1c1c' : '#fff5f5', padding: '12px', borderRadius: '16px' }}>
+                    <div style={{ fontSize: '11px', color: '#ff3b30', marginBottom: '4px', fontWeight: '700' }}>總支出 (場地)</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#ff3b30' }}>{formatAmount(totalExpense)}</div>
                   </div>
-                  <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#e3f2fd', padding: '8px', borderRadius: '6px' }}>
-                    <div style={{ fontSize: '11px', color: isDarkMode ? '#64b5f6' : '#1565c0', marginBottom: '2px', fontWeight: 'bold' }}>純利潤 (總收入 - 支出)</div>
-                    <div style={{ fontSize: '15px', fontWeight: 'bold', color: netProfit >= 0 ? (isDarkMode ? '#90caf9' : '#0d47a1') : '#ef5350' }}>{formatAmount(netProfit)}</div>
+                  <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#f0f6ff', padding: '12px', borderRadius: '16px' }}>
+                    <div style={{ fontSize: '11px', color: '#0071e3', marginBottom: '4px', fontWeight: '700' }}>純利潤</div>
+                    <div style={{ fontSize: '16px', fontWeight: '700', color: netProfit >= 0 ? '#34c759' : '#ff3b30' }}>{formatAmount(netProfit)}</div>
                   </div>
                 </div>
 
-                <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>支出明細：</span>
-                  <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '3px' }}>{icons.lightbulb} 點擊即可展開/折疊表格</span>
+                <div style={{ marginBottom: '10px', fontWeight: '700', fontSize: '15px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>支出明細 (按場地墊支人)：</span>
+                  <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 點擊展開/折疊</span>
                 </div>
 
-                <div style={{ marginBottom: '15px' }}>
+                <div style={{ marginBottom: '20px' }}>
                   {sortedPayerGroups.length === 0 ? (
-                    <div style={{ ...cardStyle, color: theme.textMuted, fontSize: '12px', textAlign: 'center', padding: '15px' }}>本月份無場地費支出紀錄</div>
+                    <div style={{ ...cardStyle, color: theme.textMuted, fontSize: '13px', textAlign: 'center', padding: '20px' }}>本月份無場地費支出紀錄</div>
                   ) : (
                     sortedPayerGroups.map(group => {
                       const isPending = group.payerName === '待定';
                       const isExpanded = !!expandedPayers[group.payerName];
 
                       return (
-                        <div key={group.payerName} style={{ ...cardStyle, padding: '0', overflow: 'hidden', borderLeft: isPending ? '5px solid #ff9800' : '5px solid #1976d2', marginBottom: '10px' }}>
+                        <div key={group.payerName} style={{ ...cardStyle, padding: '0', overflow: 'hidden', borderLeft: isPending ? '5px solid #ff9500' : '5px solid #0071e3', marginBottom: '12px' }}>
                           <div 
                             onClick={() => togglePayerExpand(group.payerName)}
                             style={{ 
-                              padding: '12px', 
+                              padding: '16px', 
                               display: 'flex', 
                               justifyContent: 'space-between', 
                               alignItems: 'center', 
                               cursor: 'pointer', 
-                              backgroundColor: isPending ? (isDarkMode ? '#3b2811' : '#fff8e1') : theme.cardBg,
+                              backgroundColor: isPending ? (isDarkMode ? '#3b2811' : '#fffcf0') : theme.cardBg,
                               userSelect: 'none'
                             }}>
                             <div>
-                              <span style={{ fontWeight: 'bold', fontSize: '14px', color: isPending ? '#ff9800' : theme.textPrimary, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <span style={{ fontWeight: '700', fontSize: '15px', color: isPending ? '#ff9500' : theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
                                 {icons.user} 墊支人：{group.payerName}
                               </span>
-                              {isPending && (
-                                <span style={{ marginLeft: '6px', fontSize: '10px', backgroundColor: '#ffe082', color: '#e65100', padding: '2px 5px', borderRadius: '4px', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                                  {icons.warning} 需跟進
-                                </span>
-                              )}
-                              <div style={{ fontSize: '11px', color: theme.textMuted, marginTop: '2px' }}>
+                              <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
                                 共 {group.items.length} 筆場地預訂紀錄
                               </div>
                             </div>
 
                             <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '14px', fontWeight: 'bold', color: '#e57373' }}>
+                              <span style={{ fontSize: '15px', fontWeight: '700', color: '#ff3b30' }}>
                                 {formatAmount(group.total)}
                               </span>
                               <span style={{ fontSize: '12px', color: theme.textMuted, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
@@ -1331,14 +1367,14 @@
                           </div>
 
                           {isExpanded && (
-                            <div style={{ borderTop: `1px solid ${theme.border}`, backgroundColor: isDarkMode ? '#151515' : '#fafafa', padding: '10px' }}>
-                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left', color: theme.textPrimary }}>
+                            <div style={{ borderTop: `1px solid ${theme.border}`, backgroundColor: isDarkMode ? '#151515' : '#fafafc', padding: '12px' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left', color: theme.textPrimary }}>
                                 <thead>
-                                  <tr style={{ borderBottom: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: '11px' }}>
-                                    <th style={{ padding: '6px 4px' }}>日期</th>
-                                    <th style={{ padding: '6px 4px' }}>時間</th>
-                                    <th style={{ padding: '6px 4px' }}>場地 (課程)</th>
-                                    <th style={{ padding: '6px 4px', textAlign: 'right' }}>價錢</th>
+                                  <tr style={{ borderBottom: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: '12px' }}>
+                                    <th style={{ padding: '8px 6px' }}>日期</th>
+                                    <th style={{ padding: '8px 6px' }}>時間</th>
+                                    <th style={{ padding: '8px 6px' }}>場地 (課程)</th>
+                                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>價錢</th>
                                   </tr>
                                 </thead>
                                 <tbody>
@@ -1347,14 +1383,14 @@
                                       key={item.id} 
                                       onDoubleClick={() => setSelectedLessonModal(item)}
                                       style={{ borderBottom: `1px dashed ${theme.border}`, cursor: 'pointer' }}
-                                      title="雙擊編輯此課堂/修改墊支人">
-                                      <td style={{ padding: '6px 4px', color: theme.textPrimary }}>{item.date.substring(5)}</td>
-                                      <td style={{ padding: '6px 4px', color: theme.textSecondary }}>{item.startTime}</td>
-                                      <td style={{ padding: '6px 4px' }}>
-                                        <strong style={{ color: '#64b5f6' }}>{item.court || '體育館'}</strong>
-                                        <div style={{ fontSize: '10px', color: theme.textMuted }}>{item.courseName}</div>
+                                      title="雙擊編輯此課堂">
+                                      <td style={{ padding: '8px 6px', color: theme.textPrimary }}>{item.date.substring(5)}</td>
+                                      <td style={{ padding: '8px 6px', color: theme.textSecondary }}>{item.startTime}</td>
+                                      <td style={{ padding: '8px 6px' }}>
+                                        <strong style={{ color: '#0071e3' }}>{item.court || '體育館'}</strong>
+                                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{item.courseName}</div>
                                       </td>
-                                      <td style={{ padding: '6px 4px', textAlign: 'right', fontWeight: 'bold', color: '#e57373' }}>
+                                      <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: '700', color: '#ff3b30' }}>
                                         {formatAmount(item.courtFee)}
                                       </td>
                                     </tr>
@@ -1369,51 +1405,68 @@
                   )}
                 </div>
 
-                <div style={{ marginBottom: '8px', fontWeight: 'bold', fontSize: '14px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>課堂學費列表：</span>
-                  <span style={{ fontSize: '11px', color: theme.textMuted, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '3px' }}>{icons.lightbulb} 雙擊卡片開啟詳情</span>
+                <div style={{ marginBottom: '10px', fontWeight: '700', fontSize: '15px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>課堂收入與學員繳費流水單：</span>
+                  <span style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {icons.lightbulb} 雙擊明細行查看詳情
+                  </span>
                 </div>
 
-                {monthlySchedule.length === 0 ? (
-                  <div style={{ ...cardStyle, textAlign: 'center', color: theme.textMuted, padding: '20px' }}>此月份無課堂紀錄</div>
-                ) : (
-                  monthlySchedule.map(item => {
-                    const totalFee = calculateTotalFee(item);
+                <div style={{ backgroundColor: theme.cardBg, borderRadius: '20px', padding: '12px 16px', boxShadow: theme.shadow, border: `1px solid ${theme.border}`, marginBottom: '20px' }}>
+                  {monthlySchedule.length === 0 ? (
+                    <div style={{ textAlign: 'center', color: theme.textMuted, padding: '20px', fontSize: '13px' }}>此月份無課堂紀錄</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {monthlySchedule.map((item, index) => {
+                        const totalFee = calculateTotalFee(item);
+                        const studentsSummary = item.enrolledStudents.length > 0 
+                          ? item.enrolledStudents.map(s => `${s.name}(${s.isPaid ? '已付' : '未付'})`).join(', ') 
+                          : '尚無學員';
 
-                    return (
-                      <div 
-                        key={item.id} 
-                        onDoubleClick={() => setSelectedLessonModal(item)}
-                        style={{ ...cardStyle, borderLeft: '4px solid #5b8bf7', cursor: 'pointer', userSelect: 'none' }}>
-                        <div style={{ fontWeight: 'bold', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                          {icons.shuttlecock} {item.courseName} ({item.date} {item.startTime || item.time})
-                        </div>
-                        <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
-                          模式: {item.feeMode === 'per_person' ? '按每人' : '按整堂'} | 課堂費: HK${item.coachFee} + 場地費: HK${item.courtFee} = <strong style={{ color: isDarkMode ? '#81c784' : '#2b580c' }}>總金額: {formatAmount(totalFee)}</strong>
-                        </div>
-                        
-                        <div style={{ marginTop: '8px', borderTop: `1px dashed ${theme.border}`, paddingTop: '6px' }}>
-                          {item.enrolledStudents.length === 0 ? (
-                            <div style={{ fontSize: '12px', color: theme.textMuted }}>尚無學員報名</div>
-                          ) : (
-                            item.enrolledStudents.map((st, idx) => (
-                              <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '13px', margin: '4px 0' }}>
-                                <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>{icons.user} {st.name} <span style={{ fontSize: '11px', color: theme.textMuted }}>({st.payMethod || 'FPS'})</span></span>
-                                <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', backgroundColor: st.isPaid ? (isDarkMode ? '#1b3320' : '#e8f5e9') : (isDarkMode ? '#3a1c1c' : '#ffebee'), color: st.isPaid ? '#81c784' : '#e57373' }}>
-                                  {st.isPaid ? '已繳費' : '未繳費'}
-                                </span>
+                        return (
+                          <div 
+                            key={item.id} 
+                            onDoubleClick={() => setSelectedLessonModal(item)}
+                            style={{ 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'center', 
+                              padding: '12px 0', 
+                              borderBottom: index < monthlySchedule.length - 1 ? `1px solid ${theme.border}` : 'none',
+                              cursor: 'pointer',
+                              userSelect: 'none'
+                            }}
+                            title="雙擊查看詳情">
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0, paddingRight: '12px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <span style={{ fontSize: '12px', fontWeight: '700', color: theme.textSecondary }}>{item.date}</span>
+                                <span style={{ fontSize: '12px', color: theme.textSecondary }}>{item.startTime}</span>
                               </div>
-                            ))
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
+                              <div style={{ fontSize: '14px', fontWeight: '700', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                {icons.shuttlecock} {item.courseName}
+                              </div>
+                              <div style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                學員：{studentsSummary}
+                              </div>
+                            </div>
+
+                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                              <div style={{ fontSize: '15px', fontWeight: '700', color: '#34c759' }}>
+                                {formatAmount(totalFee)}
+                              </div>
+                              <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                {item.feeMode === 'per_person' ? '每人收費' : '整堂收費'}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
 
-            {/* TAB 3: 學員管理 */}
             {activeTab === 'students' && (
               <div>
                 <button 
@@ -1421,21 +1474,21 @@
                     setStudentForm({ id: null, name: '', phone: '', level: '新手', notes: '' });
                     setShowAddStudentModal(true);
                   }}
-                  style={{ width: '100%', padding: '12px', backgroundColor: '#5b8bf7', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '15px', fontWeight: 'bold', cursor: 'pointer', marginBottom: '12px', boxShadow: theme.shadow, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  style={{ width: '100%', padding: '14px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '16px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '14px', boxShadow: '0 4px 16px rgba(0, 113, 227, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                   {icons.plus} 新增學員
                 </button>
 
-                <div style={{ position: 'relative', marginBottom: '12px' }}>
-                  <span style={{ position: 'absolute', left: '10px', top: '10px', color: theme.textMuted }}>{icons.search}</span>
+                <div style={{ position: 'relative', marginBottom: '14px' }}>
+                  <span style={{ position: 'absolute', left: '12px', top: '12px', color: theme.textMuted }}>{icons.search}</span>
                   <input 
                     placeholder="搜尋學員姓名..." 
                     value={searchQuery} 
                     onChange={e => setSearchQuery(e.target.value)} 
-                    style={{ ...inputStyle, paddingLeft: '32px', paddingRight: '12px', fontSize: '14px', padding: '8px 12px 8px 32px' }} 
+                    style={{ ...inputStyle, paddingLeft: '36px', paddingRight: '14px' }} 
                   />
                 </div>
 
-                <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px', paddingLeft: '4px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '10px', paddingLeft: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {icons.lightbulb} 點擊學員卡片即可檢視詳情與聯絡
                 </div>
 
@@ -1449,36 +1502,38 @@
                       style={{ 
                         ...cardStyle, 
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                        cursor: 'pointer', transition: 'transform 0.1s', userSelect: 'none'
+                        cursor: 'pointer', userSelect: 'none'
                       }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <strong style={{ fontSize: '15px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '5px' }}>{icons.user} {s.name}</strong>
-                        <span style={{ fontSize: '12px', color: theme.textSecondary, backgroundColor: isDarkMode ? '#333' : '#f0f0f0', padding: '2px 6px', borderRadius: '4px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                        <strong style={{ fontSize: '16px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.user} {s.name}</strong>
+                        <span style={{ fontSize: '12px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
                           {s.level || '新手'}
                         </span>
-                        <span style={{ fontSize: '11px', color: isDarkMode ? '#81c784' : '#2b580c', backgroundColor: isDarkMode ? '#1b3320' : '#e8f5e9', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                        <span style={{ fontSize: '12px', color: '#34c759', backgroundColor: isDarkMode ? '#1b3320' : '#f2f9f4', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
                           已上: {count} 堂
                         </span>
                       </div>
-                      <span style={{ fontSize: '18px', color: theme.textMuted }}>❯</span>
+                      <span style={{ fontSize: '16px', color: theme.textMuted }}>❯</span>
                     </div>
                   );
                 })}
               </div>
             )}
 
-            {/* TAB 4: 設定 */}
             {activeTab === 'settings' && (
               <div>
                 <div style={cardStyle}>
-                  <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>場地費墊支人名單管理</h3>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>場地費墊支人名單管理</h3>
+                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {icons.lightbulb} 管理場地費代墊人員與預設選項
+                  </div>
                   
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
                     {courtPayers.map(payer => (
-                      <div key={payer} style={{ display: 'flex', alignItems: 'center', gap: '4px', backgroundColor: payer === '待定' ? (isDarkMode ? '#3b2811' : '#fff3e0') : (isDarkMode ? '#1a2936' : '#e8f0fe'), color: payer === '待定' ? '#ff9800' : '#64b5f6', padding: '4px 8px', borderRadius: '16px', fontSize: '13px', fontWeight: 'bold' }}>
+                      <div key={payer} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: payer === '待定' ? (isDarkMode ? '#3b2811' : '#fff8e1') : theme.inputBg, color: payer === '待定' ? '#ff9500' : theme.textPrimary, padding: '6px 12px', borderRadius: '16px', fontSize: '13px', fontWeight: '600' }}>
                         <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.user} {payer}</span>
                         {payer !== '待定' && (
-                          <button onClick={() => handleDeleteCourtPayer(payer)} style={{ border: 'none', background: 'transparent', color: '#e57373', fontSize: '12px', cursor: 'pointer', padding: '0 2px' }}>{icons.xCircle}</button>
+                          <button onClick={() => handleDeleteCourtPayer(payer)} style={{ border: 'none', background: 'transparent', color: '#ff3b30', fontSize: '14px', cursor: 'pointer', padding: '0 2px' }}>{icons.xCircle}</button>
                         )}
                       </div>
                     ))}
@@ -1493,20 +1548,23 @@
                     />
                     <button 
                       onClick={handleAddCourtPayer} 
-                      style={{ padding: '6px 12px', backgroundColor: '#1976d2', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
-                      新增墊支人
+                      style={{ padding: '0 16px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
+                      新增
                     </button>
                   </div>
                 </div>
 
                 <div style={cardStyle}>
-                  <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>預設課程名稱與費用設定</h3>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '700' }}>預設課程名稱與費用設定</h3>
+                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {icons.lightbulb} 設定常用課程類型與預設收費標準
+                  </div>
                   
                   {courseTypes.map(c => (
-                    <div key={c.id} style={{ padding: '10px 0', borderBottom: `1px solid ${theme.border}`, fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                    <div key={c.id} style={{ padding: '12px 0', borderBottom: `1px solid ${theme.border}`, fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <strong>{c.name}</strong> (上限 {c.maxCapacity} 人)
-                        <div style={{ fontSize: '11px', color: theme.textSecondary }}>
+                        <strong style={{ fontSize: '14px' }}>{c.name}</strong> (上限 {c.maxCapacity} 人)
+                        <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
                           模式: {c.feeMode === 'per_person' ? '每人收費' : '整堂收費'} | 課堂費: HK${c.defaultCoachFee} | 場地費: HK${c.defaultCourtFee}
                         </div>
                       </div>
@@ -1521,20 +1579,20 @@
                             defaultCoachFee: c.defaultCoachFee,
                             defaultCourtFee: c.defaultCourtFee
                           });
-                        }} style={{ padding: '4px 8px', backgroundColor: isDarkMode ? '#333' : '#e0e0e0', color: theme.textPrimary, border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>編輯</button>
-                        <button onClick={() => setCourseTypes(courseTypes.filter(ct => ct.id !== c.id))} style={{ padding: '4px 8px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>刪除</button>
+                        }} style={{ padding: '6px 12px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>編輯</button>
+                        <button onClick={() => setCourseTypes(courseTypes.filter(ct => ct.id !== c.id))} style={{ padding: '6px 12px', backgroundColor: '#ff3b30', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>刪除</button>
                       </div>
                     </div>
                   ))}
 
-                  <form onSubmit={handleSaveCourseType} style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px', borderTop: `1px dashed ${theme.border}`, paddingTop: '10px' }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <form onSubmit={handleSaveCourseType} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '14px', borderTop: `1px dashed ${theme.border}`, paddingTop: '12px' }}>
+                    <div style={{ fontWeight: '700', fontSize: '14px' }}>
                       {editingCourseTypeId ? '修改預設課程：' : '新增預設課程：'}
                     </div>
 
                     <input placeholder="預設課程名稱 (例: 2-4人小班)" value={courseTypeForm.name} onChange={e => setCourseTypeForm({...courseTypeForm, name: e.target.value})} required style={inputStyle} />
 
-                    <div style={{ display: 'flex', gap: '6px' }}>
+                    <div style={{ display: 'flex', gap: '8px' }}>
                       <div style={{ flex: 1.2 }}>
                         <label style={{ fontSize: '11px', color: theme.textSecondary }}>計費模式</label>
                         <select value={courseTypeForm.feeMode} onChange={e => setCourseTypeForm({...courseTypeForm, feeMode: e.target.value})} style={inputStyle}>
@@ -1559,19 +1617,22 @@
                       </div>
                     </div>
 
-                    <button type="submit" style={{ padding: '8px', backgroundColor: '#4eac6d', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                    <button type="submit" style={{ padding: '12px', backgroundColor: '#34c759', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '14px', cursor: 'pointer', marginTop: '4px' }}>
                       {editingCourseTypeId ? '保存修改' : '新增課程種類'}
                     </button>
                   </form>
                 </div>
 
                 <div style={cardStyle}>
-                  <h3 style={{ margin: '0 0 10px 0', fontSize: '15px' }}>資料備份與還原</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    <button onClick={exportBackupData} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', backgroundColor: '#6c757d', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', cursor: 'pointer' }}>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '700' }}>資料備份與還原</h3>
+                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {icons.lightbulb} 匯出或匯入 JSON 備份檔案
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <button onClick={exportBackupData} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
                       {icons.download} 下載備份資料 (.json)
                     </button>
-                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px', backgroundColor: '#e67e22', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '13px', textAlign: 'center', cursor: 'pointer' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '14px', textAlign: 'center', cursor: 'pointer' }}>
                       {icons.upload} 還原 / 匯入備份資料
                       <input type="file" accept=".json" onChange={importBackupData} style={{ display: 'none' }} />
                     </label>
@@ -1585,29 +1646,28 @@
             )}
           </div>
 
-          {/* MODAL: 新增學員 */}
           {showAddStudentModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '15px' }}>
-              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px' }}>新增學員</h3>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
+              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>新增學員</h3>
                   <button onClick={() => setShowAddStudentModal(false)} style={closeButtonStyle}>{icons.close}</button>
                 </div>
 
-                <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>姓名</label>
-                    <input placeholder="輸入學員姓名" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} required style={inputStyle} />
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>姓名</label>
+                    <input placeholder="輸入學員姓名" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                   </div>
                   
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>電話</label>
-                      <input placeholder="例: 91234567" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={inputStyle} />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>電話</label>
+                      <input placeholder="例: 91234567" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>程度</label>
-                      <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={inputStyle}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>程度</label>
+                      <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }}>
                         <option value="新手" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新手</option>
                         <option value="近初" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>近初</option>
                         <option value="初級" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>初級</option>
@@ -1618,20 +1678,20 @@
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>備註</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>備註</label>
                     <textarea 
                       placeholder="備註..." 
                       value={studentForm.notes} 
                       onChange={e => setStudentForm({...studentForm, notes: e.target.value})} 
-                      style={{ ...inputStyle, height: '70px' }} 
+                      style={{ ...inputStyle, height: '80px', marginTop: '4px' }} 
                     />
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                    <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: '#5b8bf7', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                    <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
                       確認新增
                     </button>
-                    <button type="button" onClick={() => setShowAddStudentModal(false)} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                    <button type="button" onClick={() => setShowAddStudentModal(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
                       取消
                     </button>
                   </div>
@@ -1640,34 +1700,33 @@
             </div>
           )}
 
-          {/* MODAL: 學員詳情 */}
           {selectedStudentModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2200, padding: '15px' }}>
-              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px' }}>學員詳情</h3>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2200, padding: '16px' }}>
+              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>學員詳情</h3>
                   <button onClick={() => setSelectedStudentModal(null)} style={closeButtonStyle}>{icons.close}</button>
                 </div>
 
-                <div style={{ fontSize: '14px', lineHeight: '1.8', marginBottom: '15px' }}>
+                <div style={{ fontSize: '14px', lineHeight: '1.8', marginBottom: '18px' }}>
                   <div><strong>姓名：</strong>{selectedStudentModal.name}</div>
-                  <div><strong>程度：</strong><span style={{ backgroundColor: isDarkMode ? '#333' : '#f0f0f0', padding: '2px 8px', borderRadius: '4px', color: theme.textPrimary, fontWeight: 'bold' }}>{selectedStudentModal.level || '新手'}</span></div>
+                  <div><strong>程度：</strong><span style={{ backgroundColor: theme.inputBg, padding: '2px 8px', borderRadius: '6px', color: theme.textPrimary, fontWeight: '700' }}>{selectedStudentModal.level || '新手'}</span></div>
                   <div>
                     <strong>已上課節：</strong>
-                    <span style={{ backgroundColor: isDarkMode ? '#1b3320' : '#e8f5e9', padding: '2px 8px', borderRadius: '4px', color: isDarkMode ? '#81c784' : '#2e7d32', fontWeight: 'bold' }}>
+                    <span style={{ backgroundColor: isDarkMode ? '#1b3320' : '#f2f9f4', padding: '2px 8px', borderRadius: '6px', color: '#34c759', fontWeight: '700' }}>
                       {getStudentCompletedLessonCount(selectedStudentModal.name)} 堂
                     </span>
                   </div>
                   <div><strong>電話：</strong>{selectedStudentModal.phone || '未提供'}</div>
-                  <div style={{ marginTop: '6px', backgroundColor: isDarkMode ? '#252525' : '#f9f9f9', padding: '8px', borderRadius: '6px', color: theme.textSecondary, fontSize: '13px' }}>
+                  <div style={{ marginTop: '8px', backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', color: theme.textSecondary, fontSize: '13px' }}>
                     <strong>備註：</strong><br/>{selectedStudentModal.notes || '無備註'}
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <button 
                     onClick={() => openWhatsApp(selectedStudentModal.phone)} 
-                    style={{ padding: '10px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    style={{ padding: '12px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                     {icons.whatsapp} WhatsApp 聯絡學員
                   </button>
 
@@ -1677,12 +1736,12 @@
                         setStudentForm({ ...selectedStudentModal });
                         setShowEditStudentModal(true);
                       }} 
-                      style={{ flex: 1, padding: '10px', backgroundColor: isDarkMode ? '#333' : '#e0e0e0', color: theme.textPrimary, border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                      style={{ flex: 1, padding: '12px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: 'none', borderRadius: '14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                       {icons.edit} 修改資料
                     </button>
                     <button 
                       onClick={() => handleDeleteStudent(selectedStudentModal.id, selectedStudentModal.name)} 
-                      style={{ flex: 1, padding: '10px', backgroundColor: '#ef5350', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                      style={{ flex: 1, padding: '12px', backgroundColor: '#ff3b30', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                       {icons.trash} 刪除學員
                     </button>
                   </div>
@@ -1692,29 +1751,28 @@
             </div>
           )}
 
-          {/* MODAL: 修改學員 */}
           {showEditStudentModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2300, padding: '15px' }}>
-              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px' }}>修改學員資料</h3>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2300, padding: '16px' }}>
+              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>修改學員資料</h3>
                   <button onClick={() => setShowEditStudentModal(false)} style={closeButtonStyle}>{icons.close}</button>
                 </div>
 
-                <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>姓名</label>
-                    <input placeholder="學員姓名" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} required style={inputStyle} />
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>姓名</label>
+                    <input placeholder="學員姓名" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                   </div>
                   
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>電話</label>
-                      <input placeholder="電話" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={inputStyle} />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>電話</label>
+                      <input placeholder="電話" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>程度</label>
-                      <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={inputStyle}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>程度</label>
+                      <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }}>
                         <option value="新手" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新手</option>
                         <option value="近初" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>近初</option>
                         <option value="初級" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>初級</option>
@@ -1725,20 +1783,20 @@
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>備註</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>備註</label>
                     <textarea 
                       placeholder="備註" 
                       value={studentForm.notes} 
                       onChange={e => setStudentForm({...studentForm, notes: e.target.value})} 
-                      style={{ ...inputStyle, height: '70px' }} 
+                      style={{ ...inputStyle, height: '80px', marginTop: '4px' }} 
                     />
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                    <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: '#e6b800', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                    <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
                       保存修改
                     </button>
-                    <button type="button" onClick={() => setShowEditStudentModal(false)} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                    <button type="button" onClick={() => setShowEditStudentModal(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
                       取消
                     </button>
                   </div>
@@ -1747,18 +1805,17 @@
             </div>
           )}
 
-          {/* MODAL: 新增課堂 */}
           {showAddModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '15px' }}>
-              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px' }}>新增課堂</h3>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
+              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>新增課堂</h3>
                   <button onClick={() => setShowAddModal(false)} style={closeButtonStyle}>{icons.close}</button>
                 </div>
 
-                <form onSubmit={handleSaveLesson} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <form onSubmit={handleSaveLesson} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>選擇預設課程</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>選擇預設課程</label>
                     <select 
                       value={lessonForm.courseTypeId} 
                       onChange={e => {
@@ -1775,7 +1832,7 @@
                           });
                         }
                       }} 
-                      style={{ ...inputStyle, paddingRight: '20px' }}>
+                      style={{ ...inputStyle, marginTop: '4px' }}>
                       {courseTypes.map(c => (
                         <option key={c.id} value={c.id} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>
                           {c.name} ({c.feeMode === 'per_person' ? '每人' : '整堂'}${c.defaultCoachFee} + 場地費${c.defaultCourtFee})
@@ -1786,42 +1843,42 @@
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.5 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>課程名稱</label>
-                      <input type="text" value={lessonForm.courseName} onChange={e => setLessonForm({...lessonForm, courseName: e.target.value})} style={inputStyle} required />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課程名稱</label>
+                      <input type="text" value={lessonForm.courseName} onChange={e => setLessonForm({...lessonForm, courseName: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>人數上限</label>
-                      <input type="number" min="1" value={lessonForm.maxCapacity} onChange={e => setLessonForm({...lessonForm, maxCapacity: e.target.value})} style={inputStyle} required />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>人數上限</label>
+                      <input type="number" min="1" value={lessonForm.maxCapacity} onChange={e => setLessonForm({...lessonForm, maxCapacity: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.2 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>計費模式</label>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>計費模式</label>
                       <select 
                         value={lessonForm.feeMode} 
                         onChange={e => setLessonForm({...lessonForm, feeMode: e.target.value})} 
-                        style={inputStyle}>
+                        style={{ ...inputStyle, marginTop: '4px' }}>
                         <option value="per_person" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按每人收費</option>
                         <option value="per_lesson" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按整堂收費</option>
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>課堂費 (HK$)</label>
-                      <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={inputStyle} required />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課堂費 (HK$)</label>
+                      <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>場地費 (HK$)</label>
-                      <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={inputStyle} required />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費 (HK$)</label>
+                      <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>場地費墊支人</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
                     <select 
                       value={lessonForm.courtPayer} 
                       onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} 
-                      style={{ ...inputStyle, paddingRight: '20px', marginBottom: lessonForm.courtPayer === '__CUSTOM__' ? '6px' : '0' }}>
+                      style={{ ...inputStyle, marginTop: '4px', marginBottom: lessonForm.courtPayer === '__CUSTOM__' ? '6px' : '0' }}>
                       {courtPayers.map(p => (
                         <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
                       ))}
@@ -1840,32 +1897,34 @@
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>日期</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
                     <input type="date" value={lessonForm.date} onChange={e => {
                       setLessonForm({...lessonForm, date: e.target.value});
-                      setSelectedDate(e.target.value);
-                      setSelectedMonth(e.target.value.substring(0, 7));
-                    }} required style={{ ...inputStyle, width: '100%' }} />
+                      selectDate(e.target.value);
+                    }} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={inputStyle} />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
+                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={inputStyle} />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                   </div>
 
-                  <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({...lessonForm, court: e.target.value})} style={inputStyle} />
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>球場地點</label>
+                    <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({...lessonForm, court: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} />
+                  </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                    <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: '#4eac6d', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                    <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#34c759', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
                       確認新增
                     </button>
-                    <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                    <button type="button" onClick={() => setShowAddModal(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
                       取消
                     </button>
                   </div>
@@ -1874,50 +1933,49 @@
             </div>
           )}
 
-          {/* MODAL: 修改課堂 */}
           {showEditModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '15px' }}>
-              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px' }}>修改課堂</h3>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '16px' }}>
+              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>修改課堂</h3>
                   <button onClick={() => setShowEditModal(false)} style={closeButtonStyle}>{icons.close}</button>
                 </div>
 
-                <form onSubmit={handleSaveLesson} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <form onSubmit={handleSaveLesson} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.5 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>課程名稱</label>
-                      <input type="text" value={lessonForm.courseName} onChange={e => setLessonForm({...lessonForm, courseName: e.target.value})} style={inputStyle} required />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課程名稱</label>
+                      <input type="text" value={lessonForm.courseName} onChange={e => setLessonForm({...lessonForm, courseName: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>人數上限</label>
-                      <input type="number" min="1" value={lessonForm.maxCapacity} onChange={e => setLessonForm({...lessonForm, maxCapacity: e.target.value})} style={inputStyle} required />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>人數上限</label>
+                      <input type="number" min="1" value={lessonForm.maxCapacity} onChange={e => setLessonForm({...lessonForm, maxCapacity: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '6px' }}>
+                  <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.2 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>計費模式</label>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>計費模式</label>
                       <select 
                         value={lessonForm.feeMode} 
                         onChange={e => setLessonForm({...lessonForm, feeMode: e.target.value})} 
-                        style={inputStyle}>
+                        style={{ ...inputStyle, marginTop: '4px' }}>
                         <option value="per_person" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按每人收費</option>
                         <option value="per_lesson" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按整堂收費</option>
                       </select>
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>課堂費 (HK$)</label>
-                      <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={inputStyle} required />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課堂費 (HK$)</label>
+                      <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>場地費 (HK$)</label>
-                      <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={inputStyle} required />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費 (HK$)</label>
+                      <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>場地費墊支人</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
                     <select 
                       value={courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : '__CUSTOM__'} 
                       onChange={e => {
@@ -1928,7 +1986,7 @@
                           customCourtPayer: val === '__CUSTOM__' && !courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : ''
                         });
                       }} 
-                      style={{ ...inputStyle, paddingRight: '20px', marginBottom: (lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) ? '6px' : '0' }}>
+                      style={{ ...inputStyle, marginTop: '4px', marginBottom: (lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) ? '6px' : '0' }}>
                       {courtPayers.map(p => (
                         <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
                       ))}
@@ -1947,28 +2005,31 @@
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary }}>日期</label>
-                    <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%' }} />
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
+                    <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={inputStyle} />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
+                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={inputStyle} />
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                   </div>
 
-                  <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({...lessonForm, court: e.target.value})} style={inputStyle} />
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>球場地點</label>
+                    <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({...lessonForm, court: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} />
+                  </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                    <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: '#e6b800', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                    <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
                       保存變更
                     </button>
-                    <button type="button" onClick={() => setShowEditModal(false)} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                    <button type="button" onClick={() => setShowEditModal(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
                       取消
                     </button>
                   </div>
@@ -1977,76 +2038,75 @@
             </div>
           )}
 
-          {/* MODAL: 課堂詳情 */}
           {selectedLessonModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '15px' }}>
-              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}` }}>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
+              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
                 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', display: 'flex', alignItems: 'center', gap: '5px' }}>{icons.shuttlecock} {selectedLessonModal.courseName} 詳情</h3>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.shuttlecock} {selectedLessonModal.courseName} 詳情</h3>
                   <button onClick={() => setSelectedLessonModal(null)} style={closeButtonStyle}>{icons.close}</button>
                 </div>
 
-                <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.6', marginBottom: '12px' }}>
+                <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.6', marginBottom: '14px' }}>
                   <div><strong>時間：</strong>{selectedLessonModal.date} {selectedLessonModal.startTime || selectedLessonModal.time}{selectedLessonModal.endTime ? ` - ${selectedLessonModal.endTime}` : ''}</div>
                   <div><strong>地點：</strong>{selectedLessonModal.court}</div>
                   <div><strong>計費模式：</strong>{selectedLessonModal.feeMode === 'per_person' ? '按每人收費' : '按整堂收費'}</div>
                   <div><strong>課堂費：</strong>HK${selectedLessonModal.coachFee} /{selectedLessonModal.feeMode === 'per_person' ? '人' : '堂'}</div>
                   <div><strong>場地費：</strong>HK${selectedLessonModal.courtFee} ({selectedLessonModal.courtPayer || '待定'})</div>
-                  <div style={{ fontSize: '14px', fontWeight: 'bold', color: isDarkMode ? '#81c784' : '#2b580c', marginTop: '4px' }}>
+                  <div style={{ fontSize: '15px', fontWeight: '700', color: '#34c759', marginTop: '6px' }}>
                     預計總學費：HK${calculateTotalFee(selectedLessonModal)}
                   </div>
                 </div>
 
-                <div style={{ backgroundColor: isDarkMode ? '#252525' : '#f8f9fa', padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <h4 style={{ margin: 0, fontSize: '14px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{ backgroundColor: theme.inputBg, padding: '14px', borderRadius: '18px', marginBottom: '14px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.textPrimary }}>
                       學員名單 ({selectedLessonModal.enrolledStudents.length} / {selectedLessonModal.maxCapacity}人)
                     </h4>
-                    <span style={{ fontSize: '10px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '3px' }}>{icons.lightbulb} 雙擊學員列可查看詳情</span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 雙擊學員列查看詳情</span>
                   </div>
                   
                   {selectedLessonModal.enrolledStudents.length === 0 ? (
-                    <div style={{ fontSize: '12px', color: theme.textMuted, marginBottom: '8px' }}>尚無學員，請在下方新增。</div>
+                    <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '8px' }}>尚無學員報名</div>
                   ) : (
                     selectedLessonModal.enrolledStudents.map((st, idx) => (
                       <div 
                         key={idx} 
                         onDoubleClick={() => handleOpenStudentModalByName(st.name)}
                         style={{ 
-                          display: 'flex', flexDirection: 'column', gap: '4px',
-                          backgroundColor: theme.cardBg, padding: '6px 8px', borderRadius: '6px', 
-                          marginBottom: '6px', fontSize: '12px', border: `1px solid ${theme.border}`,
+                          display: 'flex', flexDirection: 'column', gap: '6px',
+                          backgroundColor: theme.cardBg, padding: '10px 12px', borderRadius: '12px', 
+                          marginBottom: '8px', fontSize: '13px', border: `1px solid ${theme.border}`,
                           cursor: 'pointer', userSelect: 'none', color: theme.textPrimary
                         }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
-                            <strong style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>{icons.user} {st.name}</strong>
-                            <span style={{ marginLeft: '4px', fontSize: '11px', color: st.isPaid ? '#81c784' : '#e57373' }}>
+                            <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.user} {st.name}</strong>
+                            <span style={{ marginLeft: '6px', fontSize: '12px', fontWeight: '700', color: st.isPaid ? '#34c759' : '#ff3b30' }}>
                               ({st.isPaid ? '已付' : '未付'})
                             </span>
                           </div>
-                          <div style={{ display: 'flex', gap: '4px' }}>
+                          <div style={{ display: 'flex', gap: '6px' }}>
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleTogglePaidStatus(st.name); }} 
-                              style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: st.isPaid ? '#fabb6e' : '#4eac6d', color: '#fff', cursor: 'pointer' }}>
+                              style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '8px', border: 'none', backgroundColor: st.isPaid ? '#ff9500' : '#34c759', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>
                               {st.isPaid ? '設未付' : '設已付'}
                             </button>
                             <button 
                               onClick={(e) => { e.stopPropagation(); handleRemoveStudentFromLesson(st.name); }} 
-                              style={{ padding: '3px 6px', fontSize: '11px', borderRadius: '4px', border: 'none', backgroundColor: '#e57373', color: '#fff', cursor: 'pointer' }}>
+                              style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '8px', border: 'none', backgroundColor: '#ff3b30', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>
                               移除
                             </button>
                           </div>
                         </div>
 
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: theme.textSecondary }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: theme.textSecondary }}>
                           <span>收款方式:</span>
                           <select 
                             value={st.payMethod || 'FPS'} 
                             onClick={e => e.stopPropagation()}
                             onChange={e => handleUpdatePayMethod(st.name, e.target.value)} 
-                            style={{ padding: '2px 4px', fontSize: '11px', borderRadius: '4px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }}>
+                            style={{ padding: '3px 6px', fontSize: '12px', borderRadius: '6px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }}>
                             <option value="FPS" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>FPS (轉數快)</option>
                             <option value="PayMe" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>PayMe</option>
                             <option value="現金" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>現金</option>
@@ -2058,15 +2118,15 @@
                   )}
 
                   {selectedLessonModal.enrolledStudents.length < selectedLessonModal.maxCapacity ? (
-                    <div style={{ marginTop: '10px', borderTop: `1px dashed ${theme.border}`, paddingTop: '8px' }}>
-                      <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '4px', color: theme.textPrimary }}>加入學員至此班課：</div>
+                    <div style={{ marginTop: '12px', borderTop: `1px dashed ${theme.border}`, paddingTop: '10px' }}>
+                      <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '6px', color: theme.textPrimary }}>加入學員至此班課：</div>
                       <select 
                         value={addStudentSelect} 
                         onChange={e => { 
                           setAddStudentSelect(e.target.value); 
                           if (e.target.value !== '__CUSTOM__') setAddStudentCustom(''); 
                         }} 
-                        style={{ ...inputStyle, fontSize: '12px', padding: '6px', marginBottom: addStudentSelect === '__CUSTOM__' ? '6px' : '0' }}>
+                        style={{ ...inputStyle, fontSize: '13px', marginBottom: addStudentSelect === '__CUSTOM__' ? '8px' : '0' }}>
                         <option value="" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>-- 從已登記學員中選擇 --</option>
                         {students.map(s => <option key={s.id} value={s.name} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{s.name}</option>)}
                         <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>輸入新學員...</option>
@@ -2077,26 +2137,26 @@
                           placeholder="請輸入新學員姓名..." 
                           value={addStudentCustom} 
                           onChange={e => setAddStudentCustom(e.target.value)} 
-                          style={{ ...inputStyle, fontSize: '12px', padding: '6px', marginBottom: '6px' }} 
+                          style={{ ...inputStyle, fontSize: '13px', marginBottom: '8px' }} 
                           required
                         />
                       )}
 
                       <button 
                         onClick={handleAddStudentToLesson} 
-                        style={{ width: '100%', padding: '6px', marginTop: '6px', backgroundColor: '#5b8bf7', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                        style={{ width: '100%', padding: '10px', marginTop: '8px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
                         加入此課堂
                       </button>
                     </div>
                   ) : (
-                    <div style={{ fontSize: '12px', color: '#e57373', marginTop: '6px', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '3px' }}>{icons.warning} 人數已滿（上限 {selectedLessonModal.maxCapacity} 人）</div>
+                    <div style={{ fontSize: '13px', color: '#ff3b30', marginTop: '8px', textAlign: 'center', fontWeight: '700' }}>人數已滿（上限 {selectedLessonModal.maxCapacity} 人）</div>
                   )}
                 </div>
 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <button 
                     onClick={() => handleOpenRenewModal(selectedLessonModal)} 
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px', backgroundColor: '#fabb6e', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
                     {icons.refresh} 續堂 (可選時間)
                   </button>
                   <button 
@@ -2118,8 +2178,8 @@
                       });
                       setShowEditModal(true);
                     }} 
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '8px', backgroundColor: isDarkMode ? '#333' : '#e0e0e0', color: theme.textPrimary, border: 'none', borderRadius: '6px', fontSize: '13px', fontWeight: 'bold', cursor: 'pointer' }}>
-                    {icons.edit} 修改
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+                    {icons.edit} 修改課堂
                   </button>
                 </div>
 
@@ -2127,89 +2187,88 @@
             </div>
           )}
 
-          {/* MODAL: 續堂選項 */}
           {showRenewModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2150, padding: '15px' }}>
-              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '18px', borderRadius: '12px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}` }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
-                  <h3 style={{ margin: 0, fontSize: '16px', display: 'flex', alignItems: 'center', gap: '5px' }}>{icons.refresh} 續堂安排 ({renewForm.originalLesson?.courseName})</h3>
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2150, padding: '16px' }}>
+              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
+                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.refresh} 續堂安排</h3>
                   <button onClick={() => setShowRenewModal(false)} style={closeButtonStyle}>{icons.close}</button>
                 </div>
 
-                <form onSubmit={handleConfirmRenewLesson} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <form onSubmit={handleConfirmRenewLesson} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary, fontWeight: 'bold' }}>續堂日期</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>續堂日期</label>
                     <input 
                       type="date" 
                       value={renewForm.date} 
                       onChange={e => setRenewForm({ ...renewForm, date: e.target.value })} 
                       required 
-                      style={{ ...inputStyle, width: '100%', marginTop: '3px' }} 
+                      style={{ ...inputStyle, width: '100%', marginTop: '4px' }} 
                     />
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary, fontWeight: 'bold' }}>開始時間</label>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>開始時間</label>
                       <input 
                         type="time" 
                         value={renewForm.startTime} 
                         onChange={e => setRenewForm({ ...renewForm, startTime: e.target.value })} 
                         required 
-                        style={{ ...inputStyle, marginTop: '3px' }} 
+                        style={{ ...inputStyle, marginTop: '4px' }} 
                       />
                     </div>
                     <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: '11px', color: theme.textSecondary, fontWeight: 'bold' }}>結束時間</label>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>結束時間</label>
                       <input 
                         type="time" 
                         value={renewForm.endTime} 
                         onChange={e => setRenewForm({ ...renewForm, endTime: e.target.value })} 
                         required 
-                        style={{ ...inputStyle, marginTop: '3px' }} 
+                        style={{ ...inputStyle, marginTop: '4px' }} 
                       />
                     </div>
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary, fontWeight: 'bold' }}>球場地點</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>球場地點</label>
                     <input 
                       placeholder="球場地點" 
                       value={renewForm.court} 
                       onChange={e => setRenewForm({ ...renewForm, court: e.target.value })} 
-                      style={{ ...inputStyle, marginTop: '3px' }} 
+                      style={{ ...inputStyle, marginTop: '4px' }} 
                     />
                   </div>
 
                   <div>
-                    <label style={{ fontSize: '11px', color: theme.textSecondary, fontWeight: 'bold' }}>場地費墊支人</label>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>場地費墊支人</label>
                     <select 
                       value={renewForm.courtPayer} 
                       onChange={e => setRenewForm({ ...renewForm, courtPayer: e.target.value })} 
-                      style={{ ...inputStyle, paddingRight: '20px', marginTop: '3px' }}>
+                      style={{ ...inputStyle, marginTop: '4px' }}>
                       {courtPayers.map(p => (
                         <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
                       ))}
                     </select>
                   </div>
 
-                  <div style={{ backgroundColor: isDarkMode ? '#252525' : '#f0f4f8', padding: '8px 10px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }} onClick={() => setRenewForm({ ...renewForm, keepStudents: !renewForm.keepStudents })}>
+                  <div style={{ backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => setRenewForm({ ...renewForm, keepStudents: !renewForm.keepStudents })}>
                     <input 
                       type="checkbox" 
                       checked={renewForm.keepStudents} 
                       onChange={e => setRenewForm({ ...renewForm, keepStudents: e.target.checked })} 
-                      style={{ cursor: 'pointer' }}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                     />
-                    <label style={{ fontSize: '12px', color: theme.textPrimary, cursor: 'pointer', userSelect: 'none' }}>
-                      帶入原學員名單 (付款狀態將重置為「未付」)
+                    <label style={{ fontSize: '13px', color: theme.textPrimary, cursor: 'pointer', userSelect: 'none', fontWeight: '600' }}>
+                      帶入原學員名單 (付款狀態重置)
                     </label>
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                    <button type="submit" style={{ flex: 1, padding: '10px', backgroundColor: '#fabb6e', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 'bold', fontSize: '14px', cursor: 'pointer' }}>
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                    <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
                       確認續堂
                     </button>
-                    <button type="button" onClick={() => setShowRenewModal(false)} style={{ padding: '10px', backgroundColor: '#8a949d', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer' }}>
+                    <button type="button" onClick={() => setShowRenewModal(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
                       取消
                     </button>
                   </div>
@@ -2218,7 +2277,6 @@
             </div>
           )}
 
-          {/* 完美動態跟隨與精準置中的底導覽列 */}
           <nav 
             ref={navContainerRef}
             style={{ 
@@ -2227,20 +2285,19 @@
               backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
               borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, 
               display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-              paddingTop: '6px', paddingBottom: 'calc(6px + env(safe-area-inset-bottom, 12px))', 
+              paddingTop: '8px', paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 12px))', 
               zIndex: 1000, maxWidth: '480px', margin: '0 auto', boxSizing: 'border-box' 
             }}>
             
-            {/* 動態膠囊背景 */}
             <div style={{
               position: 'absolute',
-              top: '6px',
-              bottom: 'calc(6px + env(safe-area-inset-bottom, 12px))',
+              top: '8px',
+              bottom: 'calc(8px + env(safe-area-inset-bottom, 12px))',
               left: `${capsuleStyle.left}px`,
               width: `${capsuleStyle.width}px`,
               opacity: capsuleStyle.opacity,
               transition: 'left 0.35s cubic-bezier(0.25, 1, 0.5, 1), width 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
-              backgroundColor: isDarkMode ? 'rgba(91, 139, 247, 0.25)' : 'rgba(91, 139, 247, 0.15)',
+              backgroundColor: isDarkMode ? 'rgba(0, 113, 227, 0.25)' : 'rgba(0, 113, 227, 0.12)',
               borderRadius: '16px',
               pointerEvents: 'none',
               zIndex: 1
@@ -2256,8 +2313,8 @@
                   style={{ 
                     flex: 1,
                     border: 'none', backgroundColor: 'transparent', 
-                    color: isActive ? '#5b8bf7' : theme.textMuted, 
-                    fontSize: '11px', fontWeight: isActive ? 'bold' : 'normal',
+                    color: isActive ? '#0071e3' : theme.textMuted, 
+                    fontSize: '11px', fontWeight: isActive ? '700' : '500',
                     cursor: 'pointer', display: 'flex', flexDirection: 'column', 
                     alignItems: 'center', gap: '3px', position: 'relative', zIndex: 2,
                     padding: '6px 0',
