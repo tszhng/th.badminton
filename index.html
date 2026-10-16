@@ -53,8 +53,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.7.0";
-      const LAST_UPDATED = "2026-10-16 16:15";
+      const APP_VERSION = "v4.7.1";
+      const LAST_UPDATED = "2026-10-16 21:10";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -98,16 +98,14 @@
       const [selectedDate, setSelectedDate] = useState(todayStr);
       const [selectedMonth, setSelectedMonth] = useState(getMonthString(todayStr));
 
-      // 課表預設月曆
       const [calendarViewMode, setCalendarViewMode] = useState('month');
       const [showAmount, setShowAmount] = useState(false);
       const [activeTab, setActiveTab] = useState('schedule');
       const [expandedPayers, setExpandedPayers] = useState({});
 
-      // 收支頁：月/年切換與流水過濾
-      const [revenueViewMode, setRevenueViewMode] = useState('month'); // 'month' | 'year'
+      const [revenueViewMode, setRevenueViewMode] = useState('month');
       const [selectedYear, setSelectedYear] = useState(() => todayStr.substring(0, 4));
-      const [revenueStatusFilter, setRevenueStatusFilter] = useState('all'); // 'all' | 'unpaid' | 'paid'
+      const [revenueStatusFilter, setRevenueStatusFilter] = useState('all');
 
       const [monthSlideDir, setMonthSlideDir] = useState('');
       const touchStartXRef = useRef(0);
@@ -127,7 +125,6 @@
         return () => window.removeEventListener('scroll', handleScroll);
       }, []);
 
-      // 監聽 activeTab，回到課表強制回到今天與月曆
       useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         if (activeTab === 'schedule') {
@@ -209,7 +206,8 @@
         setCalendarViewMode(mode);
         const realToday = getRealTodayString();
         setTodayStr(realToday);
-        selectDate(realToday);
+        setSelectedDate(realToday);
+        setSelectedMonth(getMonthString(realToday));
       };
 
       useEffect(() => {
@@ -468,19 +466,6 @@
         }
       };
 
-      // 計算特定學員在該堂課應繳的金額
-      const getStudentExpectedFee = (item) => {
-        const coach = Number(item.coachFee) || 0;
-        const court = Number(item.courtFee) || 0;
-        const count = item.enrolledStudents && item.enrolledStudents.length > 0 ? item.enrolledStudents.length : 1;
-        if (item.feeMode === 'per_person') {
-          return coach + (court / count);
-        } else {
-          return (coach + court) / count;
-        }
-      };
-
-      // 計算特定課堂目前實收金額 (已上課且已付款)
       const getLessonReceivedIncome = (item) => {
         if (!item.enrolledStudents || item.enrolledStudents.length === 0) return 0;
         const coach = Number(item.coachFee) || 0;
@@ -587,7 +572,7 @@
       const tomorrowLessons = schedule.filter(item => item.date === tomorrowStr);
       const day7Lessons = schedule.filter(item => item.date === day7Str);
 
-      // 月度財務統計
+      // 月度收支計算
       const monthlySchedule = schedule
         .filter(item => item.date.startsWith(selectedMonth))
         .sort((a, b) => new Date(a.date) - new Date(b.date) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
@@ -635,7 +620,7 @@
 
       const netProfit = totalIncome - totalExpense;
 
-      // 年度財務統計
+      // 年度收支統計
       const yearlySchedule = schedule.filter(item => item.date.startsWith(selectedYear));
       let yearlyExpectedIncome = 0;
       let yearlyTotalIncome = 0;
@@ -692,6 +677,82 @@
         if (b.payerName === '待定') return -1;
         return a.payerName.localeCompare(b.payerName, 'zh-HK');
       });
+
+      // 複製 WhatsApp 財務摘要
+      const handleCopyWhatsAppSummary = () => {
+        const unpaidDetails = [];
+        monthlySchedule.forEach(lesson => {
+          if (lesson.enrolledStudents) {
+            lesson.enrolledStudents.forEach(st => {
+              if (!st.isPaid) {
+                unpaidDetails.push(`• ${lesson.date.substring(5)} ${st.name} (${lesson.courseName})`);
+              }
+            });
+          }
+        });
+
+        const lines = [
+          `🏸 *TH BADMINTON 月度財務摘要 (${selectedMonth})*`,
+          `------------------------------`,
+          `📅 總堂數：${monthlySchedule.length} 堂`,
+          `💰 預計收入：HK$${estimatedIncome.toFixed(0)}`,
+          `💵 實收收入：HK$${totalIncome.toFixed(0)}`,
+          `🏟️ 場地支出：HK$${totalExpense.toFixed(0)}`,
+          `✨ 純利潤：HK$${netProfit.toFixed(0)}`,
+          `------------------------------`,
+          `💳 *收款方式小計*：`,
+          `FPS: HK$${paymentMethodStats.FPS.toFixed(0)} | PayMe: HK$${paymentMethodStats.PayMe.toFixed(0)}`,
+          `現金: HK$${paymentMethodStats.現金.toFixed(0)} | 轉帳: HK$${paymentMethodStats.銀行轉帳.toFixed(0)}`,
+          `------------------------------`,
+          `⚠️ *未收學費名單 (${unpaidDetails.length} 筆)*：`,
+          unpaidDetails.length > 0 ? unpaidDetails.join('\n') : '全月學費已收齊！🎉'
+        ];
+
+        const text = lines.join('\n');
+        navigator.clipboard.writeText(text).then(() => {
+          alert('已成功複製 WhatsApp 摘要！可直接貼上發送或備忘。');
+        }).catch(() => {
+          alert('複製失敗，請手動選取複製');
+        });
+      };
+
+      // 匯出 CSV 財務報表
+      const handleExportCSVReport = () => {
+        if (monthlySchedule.length === 0) {
+          alert('本月份沒有課堂紀錄可匯出！');
+          return;
+        }
+
+        const headers = ['課堂編號', '日期', '時間', '課程種類', '場地', '計費模式', '教練費', '場地費', '墊支人', '預計總收費', '實收金額', '學員名單及狀態'];
+        const rows = monthlySchedule.map(item => {
+          const totalFee = calculateTotalFee(item);
+          const recFee = getLessonReceivedIncome(item);
+          const studentSummary = (item.enrolledStudents || []).map(s => `${s.name}(${s.isPaid ? '已付' : '未付'}-${s.payMethod || 'FPS'})`).join('; ');
+          
+          return [
+            item.id,
+            item.date,
+            `${item.startTime}-${item.endTime}`,
+            `"${item.courseName}"`,
+            `"${item.court || ''}"`,
+            item.feeMode === 'per_person' ? '每人收費' : '整堂收費',
+            item.coachFee,
+            item.courtFee,
+            item.courtPayer || '待定',
+            totalFee,
+            recFee,
+            `"${studentSummary}"`
+          ].join(',');
+        });
+
+        const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `TH_Badminton_Report_${selectedMonth}.csv`;
+        a.click();
+      };
 
       const handleCancelLesson = (lessonId) => {
         if (window.confirm("確定要取消這堂課嗎？所有學員紀錄將會移除。")) {
@@ -996,7 +1057,8 @@
         lightbulb: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14z"/></svg>,
         eye: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
         eyeOff: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
-        close: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        close: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+        fileText: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
       };
 
       const closeButtonStyle = { 
@@ -1676,9 +1738,9 @@
                       )}
                     </div>
 
-                    {/* 收入詳細流水帳 (全新重構卡片式設計) */}
+                    {/* 收入明細 (表格模式 + 匯出按鈕) */}
                     <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontWeight: '700', fontSize: '15px', color: theme.textSecondary }}>課堂收入詳細流水：</span>
+                      <span style={{ fontWeight: '700', fontSize: '15px', color: theme.textSecondary }}>收入明細：</span>
                       
                       {/* 狀態過濾鈕 */}
                       <div style={{ display: 'flex', gap: '4px' }}>
@@ -1706,7 +1768,8 @@
                       </div>
                     </div>
 
-                    <div style={{ marginBottom: '20px' }}>
+                    {/* 表格化收入明細清單 */}
+                    <div style={{ ...cardStyle, padding: '0', overflow: 'hidden', marginBottom: '14px' }}>
                       {(() => {
                         const filteredLessons = monthlySchedule.filter(item => {
                           const totalExpected = calculateTotalFee(item);
@@ -1719,90 +1782,103 @@
 
                         if (filteredLessons.length === 0) {
                           return (
-                            <div style={{ ...cardStyle, textAlign: 'center', color: theme.textMuted, padding: '24px', fontSize: '13px' }}>
+                            <div style={{ textAlign: 'center', color: theme.textMuted, padding: '24px', fontSize: '13px' }}>
                               沒有符合條件的課堂收費紀錄
                             </div>
                           );
                         }
 
-                        return filteredLessons.map(item => {
-                          const totalExpected = calculateTotalFee(item);
-                          const totalReceived = getLessonReceivedIncome(item);
-                          const isFullyPaid = totalExpected > 0 && totalReceived >= totalExpected;
-                          const studentExpectedFee = getStudentExpectedFee(item);
+                        return (
+                          <div style={{ overflowX: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px', textAlign: 'left', color: theme.textPrimary }}>
+                              <thead>
+                                <tr style={{ backgroundColor: theme.tableHeader, borderBottom: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: '11px' }}>
+                                  <th style={{ padding: '10px 8px' }}>日期 / 課堂</th>
+                                  <th style={{ padding: '10px 8px' }}>學員及收款狀態</th>
+                                  <th style={{ padding: '10px 8px', textAlign: 'right', whiteSpace: 'nowrap' }}>實收 / 應收</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {filteredLessons.map(item => {
+                                  const totalExpected = calculateTotalFee(item);
+                                  const totalReceived = getLessonReceivedIncome(item);
+                                  const isFullyPaid = totalExpected > 0 && totalReceived >= totalExpected;
 
-                          return (
-                            <div 
-                              key={item.id} 
-                              onDoubleClick={() => setSelectedLessonModal(item)}
-                              style={{ 
-                                ...cardStyle, 
-                                padding: '14px', 
-                                borderLeft: isFullyPaid ? '5px solid #34c759' : '5px solid #ff9500', 
-                                marginBottom: '12px',
-                                cursor: 'pointer'
-                              }}
-                              title="雙擊編輯此課堂">
-                              
-                              {/* 卡片頂部：日期時間 + 課程名稱 + 實收進度標籤 */}
-                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                                <div>
-                                  <div style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>
-                                    {item.date} {item.startTime}{item.endTime ? ` - ${item.endTime}` : ''}
-                                  </div>
-                                  <strong style={{ fontSize: '15px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                                    {icons.shuttlecock} {item.courseName}
-                                  </strong>
-                                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
-                                    {icons.location} {item.court || '體育館'}
-                                  </div>
-                                </div>
+                                  return (
+                                    <tr 
+                                      key={item.id}
+                                      onDoubleClick={() => setSelectedLessonModal(item)}
+                                      onClick={() => setSelectedLessonModal(item)}
+                                      style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer' }}
+                                      title="點擊查看或修改詳情">
+                                      
+                                      {/* 日期與課堂名稱 */}
+                                      <td style={{ padding: '10px 8px', verticalAlign: 'top', minWidth: '85px' }}>
+                                        <div style={{ fontWeight: '700', color: theme.textPrimary }}>{item.date.substring(5)}</div>
+                                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{item.startTime}</div>
+                                        <div style={{ fontSize: '12px', fontWeight: '600', color: '#0071e3', marginTop: '2px' }}>{item.courseName}</div>
+                                      </td>
 
-                                <div style={{ textAlign: 'right' }}>
-                                  <span style={{ 
-                                    fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '6px', 
-                                    backgroundColor: isFullyPaid ? (isDarkMode ? '#1b3320' : '#eaf8ec') : (isDarkMode ? '#3b2511' : '#fef3e5'), 
-                                    color: isFullyPaid ? '#34c759' : '#ff9500' 
-                                  }}>
-                                    {isFullyPaid ? '✓ 已收齊' : `尚欠 ${formatAmount(totalExpected - totalReceived)}`}
-                                  </span>
-                                  <div style={{ fontSize: '14px', fontWeight: '800', color: isFullyPaid ? '#34c759' : '#ff9500', marginTop: '4px' }}>
-                                    實收 {formatAmount(totalReceived)}
-                                  </div>
-                                  <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                    應收 {formatAmount(totalExpected)}
-                                  </div>
-                                </div>
-                              </div>
+                                      {/* 學員圓點狀態與方式 */}
+                                      <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
+                                        {item.enrolledStudents && item.enrolledStudents.length > 0 ? (
+                                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+                                            {item.enrolledStudents.map((st, sIdx) => (
+                                              <span 
+                                                key={sIdx} 
+                                                style={{ 
+                                                  display: 'inline-flex', alignItems: 'center', gap: '4px', 
+                                                  backgroundColor: theme.inputBg, padding: '2px 6px', borderRadius: '6px', fontSize: '11px' 
+                                                }}>
+                                                <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: st.isPaid ? '#34c759' : '#ff3b30' }}></span>
+                                                <span style={{ color: theme.textPrimary, fontWeight: '600' }}>{st.name}</span>
+                                                <span style={{ color: theme.textMuted, fontSize: '9px' }}>({st.payMethod || 'FPS'})</span>
+                                              </span>
+                                            ))}
+                                          </div>
+                                        ) : (
+                                          <span style={{ color: theme.textMuted, fontSize: '11px' }}>尚無學員</span>
+                                        )}
+                                      </td>
 
-                              {/* 卡片學員明細：列出每位學員的收款狀態與收款方式 */}
-                              <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '8px', marginTop: '8px' }}>
-                                <div style={{ fontSize: '11px', color: theme.textSecondary, fontWeight: '700', marginBottom: '6px' }}>
-                                  學員繳費詳情 ({item.enrolledStudents.length}/{item.maxCapacity}人)：
-                                </div>
-                                {item.enrolledStudents.length === 0 ? (
-                                  <span style={{ fontSize: '12px', color: theme.textMuted }}>尚無學員報名</span>
-                                ) : (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    {item.enrolledStudents.map((st, idx) => (
-                                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', backgroundColor: theme.inputBg, padding: '4px 8px', borderRadius: '8px' }}>
-                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                          <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: st.isPaid ? '#34c759' : '#ff3b30' }}></span>
-                                          <strong style={{ color: theme.textPrimary }}>{st.name}</strong>
-                                          <span style={{ fontSize: '10px', color: theme.textMuted }}>({st.payMethod || 'FPS'})</span>
+                                      {/* 實收與應收金額 */}
+                                      <td style={{ padding: '10px 8px', textAlign: 'right', verticalAlign: 'top', minWidth: '75px' }}>
+                                        <div style={{ fontWeight: '800', fontSize: '13px', color: isFullyPaid ? '#34c759' : '#ff9500' }}>
+                                          {formatAmount(totalReceived)}
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '1px' }}>
+                                          應收 {formatAmount(totalExpected)}
+                                        </div>
+                                        <span style={{ 
+                                          fontSize: '9px', fontWeight: '700', padding: '1px 4px', borderRadius: '4px', display: 'inline-block', marginTop: '3px',
+                                          backgroundColor: isFullyPaid ? (isDarkMode ? '#1b3320' : '#eaf8ec') : (isDarkMode ? '#3b2511' : '#fef3e5'), 
+                                          color: isFullyPaid ? '#34c759' : '#ff9500' 
+                                        }}>
+                                          {isFullyPaid ? '已收齊' : '未齊'}
                                         </span>
-                                        <span style={{ fontWeight: '700', color: st.isPaid ? '#34c759' : '#ff3b30' }}>
-                                          {st.isPaid ? `已付 ${formatAmount(studentExpectedFee)}` : `未付 ${formatAmount(studentExpectedFee)}`}
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        });
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
                       })()}
+                    </div>
+
+                    {/* WhatsApp 摘要 & CSV 匯出功能按鈕 */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+                      <button 
+                        onClick={handleCopyWhatsAppSummary}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
+                        {icons.whatsapp} WhatsApp 摘要
+                      </button>
+                      <button 
+                        onClick={handleExportCSVReport}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: `1px solid ${theme.border}`, borderRadius: '14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
+                        {icons.fileText} 匯出 CSV 報表
+                      </button>
                     </div>
                   </div>
                 )}
