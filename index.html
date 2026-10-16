@@ -45,8 +45,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.5.9";
-      const LAST_UPDATED = "2026-10-15 18:45";
+      const APP_VERSION = "v4.6.0";
+      const LAST_UPDATED = "2026-10-16 10:20";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -90,7 +90,7 @@
       const [selectedDate, setSelectedDate] = useState(todayStr);
       const [selectedMonth, setSelectedMonth] = useState(getMonthString(todayStr));
 
-      const [calendarViewMode, setCalendarViewMode] = useState('week');
+      const [calendarViewMode, setCalendarViewMode] = useState('month');
       const [showAmount, setShowAmount] = useState(false);
       const [activeTab, setActiveTab] = useState('schedule');
       const [expandedPayers, setExpandedPayers] = useState({});
@@ -111,6 +111,11 @@
 
       useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (activeTab === 'schedule') {
+          const realToday = getRealTodayString();
+          setSelectedDate(realToday);
+          setSelectedMonth(getMonthString(realToday));
+        }
       }, [activeTab]);
 
       const tabs = [
@@ -175,6 +180,11 @@
 
       const switchView = (mode) => {
         setCalendarViewMode(mode);
+        if (mode === 'week') {
+          const realToday = getRealTodayString();
+          setTodayStr(realToday);
+          selectDate(realToday);
+        }
       };
 
       useEffect(() => {
@@ -1035,7 +1045,7 @@
                 {icons.calendar} {formattedTitle}
               </span>
               <span style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                雙擊卡片加學員 / 管理
+                {icons.lightbulb} 雙擊卡片加學員 / 管理
               </span>
             </div>
 
@@ -1904,50 +1914,53 @@
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課堂費 (HK$)</label>
                       <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
+                      <select 
+                        value={lessonForm.courtPayer} 
+                        onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} 
+                        style={{ ...inputStyle, marginTop: '4px', marginBottom: lessonForm.courtPayer === '__CUSTOM__' ? '6px' : '0' }}>
+                        {courtPayers.map(p => (
+                          <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
+                        ))}
+                        <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新增墊支人...</option>
+                      </select>
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費 (HK$)</label>
                       <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
-                    <select 
-                      value={lessonForm.courtPayer} 
-                      onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} 
-                      style={{ ...inputStyle, marginTop: '4px', marginBottom: lessonForm.courtPayer === '__CUSTOM__' ? '6px' : '0' }}>
-                      {courtPayers.map(p => (
-                        <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
-                      ))}
-                      <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新增墊支人...</option>
-                    </select>
+                  {lessonForm.courtPayer === '__CUSTOM__' && (
+                    <input 
+                      placeholder="請輸入新墊支人姓名" 
+                      value={lessonForm.customCourtPayer} 
+                      onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value})} 
+                      style={{ ...inputStyle, marginTop: '-4px', marginBottom: '4px' }}
+                      required 
+                    />
+                  )}
 
-                    {lessonForm.courtPayer === '__CUSTOM__' && (
-                      <input 
-                        placeholder="請輸入新墊支人姓名" 
-                        value={lessonForm.customCourtPayer} 
-                        onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value})} 
-                        style={inputStyle}
-                        required 
-                      />
-                    )}
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
+                    <input type="date" value={lessonForm.date} onChange={e => {
+                      setLessonForm({...lessonForm, date: e.target.value});
+                      selectDate(e.target.value);
+                    }} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <div style={{ flex: 1.2 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
-                      <input type="date" value={lessonForm.date} onChange={e => {
-                        setLessonForm({...lessonForm, date: e.target.value});
-                        selectDate(e.target.value);
-                      }} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
-                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                   </div>
 
@@ -2004,54 +2017,57 @@
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課堂費 (HK$)</label>
                       <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
+                      <select 
+                        value={courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : '__CUSTOM__'} 
+                        onChange={e => {
+                          const val = e.target.value;
+                          setLessonForm({
+                            ...lessonForm, 
+                            courtPayer: val,
+                            customCourtPayer: val === '__CUSTOM__' && !courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : ''
+                          });
+                        }} 
+                        style={{ ...inputStyle, marginTop: '4px' }}>
+                        {courtPayers.map(p => (
+                          <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
+                        ))}
+                        <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新增墊支人...</option>
+                      </select>
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費 (HK$)</label>
                       <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
-                    <select 
-                      value={courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : '__CUSTOM__'} 
-                      onChange={e => {
-                        const val = e.target.value;
-                        setLessonForm({
-                          ...lessonForm, 
-                          courtPayer: val,
-                          customCourtPayer: val === '__CUSTOM__' && !courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : ''
-                        });
-                      }} 
-                      style={{ ...inputStyle, marginTop: '4px', marginBottom: (lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) ? '6px' : '0' }}>
-                      {courtPayers.map(p => (
-                        <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
-                      ))}
-                      <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新增墊支人...</option>
-                    </select>
+                  {(lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) && (
+                    <input 
+                      placeholder="請輸入新墊支人姓名" 
+                      value={lessonForm.customCourtPayer || (courtPayers.includes(lessonForm.courtPayer) ? '' : lessonForm.courtPayer)} 
+                      onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value, courtPayer: '__CUSTOM__'})} 
+                      style={{ ...inputStyle, marginTop: '-4px', marginBottom: '4px' }}
+                      required 
+                    />
+                  )}
 
-                    {(lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) && (
-                      <input 
-                        placeholder="請輸入新墊支人姓名" 
-                        value={lessonForm.customCourtPayer || (courtPayers.includes(lessonForm.courtPayer) ? '' : lessonForm.courtPayer)} 
-                        onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value, courtPayer: '__CUSTOM__'})} 
-                        style={inputStyle}
-                        required 
-                      />
-                    )}
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
+                    <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <div style={{ flex: 1.2 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
-                      <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
-                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                   </div>
 
@@ -2098,7 +2114,7 @@
                     <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.textPrimary }}>
                       學員名單 ({selectedLessonModal.enrolledStudents.length} / {selectedLessonModal.maxCapacity}人)
                     </h4>
-                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>雙擊學員列查看詳情</span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 雙擊學員列查看詳情</span>
                   </div>
                   
                   {selectedLessonModal.enrolledStudents.length === 0 ? (
