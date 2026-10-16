@@ -53,8 +53,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.6.2";
-      const LAST_UPDATED = "2026-10-16 14:15";
+      const APP_VERSION = "v4.7.0";
+      const LAST_UPDATED = "2026-10-16 16:15";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -98,11 +98,16 @@
       const [selectedDate, setSelectedDate] = useState(todayStr);
       const [selectedMonth, setSelectedMonth] = useState(getMonthString(todayStr));
 
-      // 預設為月曆模式
+      // 課表預設月曆
       const [calendarViewMode, setCalendarViewMode] = useState('month');
       const [showAmount, setShowAmount] = useState(false);
       const [activeTab, setActiveTab] = useState('schedule');
       const [expandedPayers, setExpandedPayers] = useState({});
+
+      // 收支頁：月/年切換與流水過濾
+      const [revenueViewMode, setRevenueViewMode] = useState('month'); // 'month' | 'year'
+      const [selectedYear, setSelectedYear] = useState(() => todayStr.substring(0, 4));
+      const [revenueStatusFilter, setRevenueStatusFilter] = useState('all'); // 'all' | 'unpaid' | 'paid'
 
       const [monthSlideDir, setMonthSlideDir] = useState('');
       const touchStartXRef = useRef(0);
@@ -122,7 +127,7 @@
         return () => window.removeEventListener('scroll', handleScroll);
       }, []);
 
-      // 監聽 activeTab，只要回到課表頁，強制重置為今天與月模式
+      // 監聽 activeTab，回到課表強制回到今天與月曆
       useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
         if (activeTab === 'schedule') {
@@ -204,11 +209,9 @@
         setCalendarViewMode(mode);
         const realToday = getRealTodayString();
         setTodayStr(realToday);
-        setSelectedDate(realToday);
-        setSelectedMonth(getMonthString(realToday));
+        selectDate(realToday);
       };
 
-      // 監聽模式與日期變更，當進入周檢視時確保將目標置中
       useEffect(() => {
         if (calendarViewMode === 'week') {
           const timer = setTimeout(() => {
@@ -218,7 +221,6 @@
         }
       }, [calendarViewMode, selectedDate]);
 
-      // 月份滑動切換邏輯
       const changeMonthByOffset = (offset) => {
         const [y, m] = selectedMonth.split('-').map(Number);
         const nextD = new Date(y, m - 1 + offset, 1);
@@ -245,13 +247,11 @@
       const handleMonthTouchEnd = (e) => {
         const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
         const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
-        
-        // 水平滑動距離大於 45px 且大於垂直滑動時觸發
         if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY)) {
           if (deltaX < 0) {
-            changeMonthByOffset(1); // 向左滑 -> 下個月
+            changeMonthByOffset(1);
           } else {
-            changeMonthByOffset(-1); // 向右滑 -> 上個月
+            changeMonthByOffset(-1);
           }
         }
       };
@@ -468,6 +468,35 @@
         }
       };
 
+      // 計算特定學員在該堂課應繳的金額
+      const getStudentExpectedFee = (item) => {
+        const coach = Number(item.coachFee) || 0;
+        const court = Number(item.courtFee) || 0;
+        const count = item.enrolledStudents && item.enrolledStudents.length > 0 ? item.enrolledStudents.length : 1;
+        if (item.feeMode === 'per_person') {
+          return coach + (court / count);
+        } else {
+          return (coach + court) / count;
+        }
+      };
+
+      // 計算特定課堂目前實收金額 (已上課且已付款)
+      const getLessonReceivedIncome = (item) => {
+        if (!item.enrolledStudents || item.enrolledStudents.length === 0) return 0;
+        const coach = Number(item.coachFee) || 0;
+        const court = Number(item.courtFee) || 0;
+        const totalCount = item.enrolledStudents.length;
+
+        if (item.feeMode === 'per_person') {
+          return item.enrolledStudents.reduce((acc, st) => {
+            return acc + (st.isPaid ? (coach + (court / totalCount)) : 0);
+          }, 0);
+        } else {
+          const paidCount = item.enrolledStudents.filter(st => st.isPaid).length;
+          return (paidCount / totalCount) * (coach + court);
+        }
+      };
+
       const openWhatsApp = (phone) => {
         if (!phone) {
           alert('該學員未填寫電話號碼！');
@@ -558,6 +587,7 @@
       const tomorrowLessons = schedule.filter(item => item.date === tomorrowStr);
       const day7Lessons = schedule.filter(item => item.date === day7Str);
 
+      // 月度財務統計
       const monthlySchedule = schedule
         .filter(item => item.date.startsWith(selectedMonth))
         .sort((a, b) => new Date(a.date) - new Date(b.date) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
@@ -565,6 +595,7 @@
       let estimatedIncome = 0;
       let totalIncome = 0;
       let totalExpense = 0;
+      const paymentMethodStats = { FPS: 0, PayMe: 0, 現金: 0, 銀行轉帳: 0 };
 
       monthlySchedule.forEach(item => {
         const totalFee = calculateTotalFee(item);
@@ -574,27 +605,73 @@
         if (item.date <= realTodayStr && item.enrolledStudents && item.enrolledStudents.length > 0) {
           const coach = Number(item.coachFee) || 0;
           const court = Number(item.courtFee) || 0;
+          const totalCount = item.enrolledStudents.length;
           
           if (item.feeMode === 'per_person') {
             item.enrolledStudents.forEach(st => {
               if (st.isPaid) {
-                const perPersonCourt = item.enrolledStudents.length > 0 ? court / item.enrolledStudents.length : 0;
-                totalIncome += (coach + perPersonCourt);
+                const perPersonCourt = totalCount > 0 ? court / totalCount : 0;
+                const amt = coach + perPersonCourt;
+                totalIncome += amt;
+                const method = st.payMethod || 'FPS';
+                paymentMethodStats[method] = (paymentMethodStats[method] || 0) + amt;
               }
             });
           } else {
-            const isAnyPaid = item.enrolledStudents.some(st => st.isPaid);
-            if (isAnyPaid) {
-              const paidCount = item.enrolledStudents.filter(st => st.isPaid).length;
-              if (paidCount > 0) {
-                totalIncome += totalFee;
-              }
+            const paidCount = item.enrolledStudents.filter(st => st.isPaid).length;
+            if (paidCount > 0) {
+              const portion = (paidCount / totalCount) * totalFee;
+              totalIncome += portion;
+              item.enrolledStudents.forEach(st => {
+                if (st.isPaid) {
+                  const method = st.payMethod || 'FPS';
+                  paymentMethodStats[method] = (paymentMethodStats[method] || 0) + (totalFee / totalCount);
+                }
+              });
             }
           }
         }
       });
 
       const netProfit = totalIncome - totalExpense;
+
+      // 年度財務統計
+      const yearlySchedule = schedule.filter(item => item.date.startsWith(selectedYear));
+      let yearlyExpectedIncome = 0;
+      let yearlyTotalIncome = 0;
+      let yearlyTotalExpense = 0;
+
+      const monthlyBreakdown = Array.from({ length: 12 }, (_, i) => {
+        const mStr = `${selectedYear}-${String(i + 1).padStart(2, '0')}`;
+        const mLessons = yearlySchedule.filter(item => item.date.startsWith(mStr));
+        let mExp = 0;
+        let mInc = 0;
+        let mCost = 0;
+
+        mLessons.forEach(item => {
+          mExp += calculateTotalFee(item);
+          mCost += (Number(item.courtFee) || 0);
+          if (item.date <= realTodayStr && item.enrolledStudents) {
+            mInc += getLessonReceivedIncome(item);
+          }
+        });
+
+        yearlyExpectedIncome += mExp;
+        yearlyTotalIncome += mInc;
+        yearlyTotalExpense += mCost;
+
+        return {
+          monthStr: mStr,
+          monthNum: i + 1,
+          lessonsCount: mLessons.length,
+          expectedIncome: mExp,
+          totalIncome: mInc,
+          totalExpense: mCost,
+          net: mInc - mCost
+        };
+      });
+
+      const yearlyNetProfit = yearlyTotalIncome - yearlyTotalExpense;
 
       const groupedCourtFees = monthlySchedule
         .filter(item => (Number(item.courtFee) || 0) > 0)
@@ -1417,179 +1494,401 @@
 
             {activeTab === 'revenue' && (
               <div>
-                <div style={{ ...cardStyle, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} style={{ padding: '8px 12px', fontSize: '14px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }} />
-                  
-                  <button 
-                    onClick={() => setShowAmount(!showAmount)} 
-                    style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px', backgroundColor: showAmount ? theme.inputBg : '#0071e3', color: showAmount ? theme.textPrimary : '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '600', cursor: 'pointer' }}>
-                    {showAmount ? icons.eyeOff : icons.eye}
-                    <span>{showAmount ? '隱藏金額' : '顯示金額'}</span>
-                  </button>
-                </div>
-
-                <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center', padding: '14px' }}>
-                  <div style={{ backgroundColor: isDarkMode ? '#1b3320' : '#f2f9f4', padding: '12px', borderRadius: '16px' }}>
-                    <div style={{ fontSize: '11px', color: '#34c759', marginBottom: '4px', fontWeight: '700' }}>預計收入 (全月已排課)</div>
-                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#34c759' }}>{formatAmount(estimatedIncome)}</div>
-                  </div>
-                  <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#f0f6ff', padding: '12px', borderRadius: '16px' }}>
-                    <div style={{ fontSize: '11px', color: '#0071e3', marginBottom: '4px', fontWeight: '700' }}>總收入 (已上堂已繳費)</div>
-                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#0071e3' }}>{formatAmount(totalIncome)}</div>
-                  </div>
-                  <div style={{ backgroundColor: isDarkMode ? '#3a1c1c' : '#fff5f5', padding: '12px', borderRadius: '16px' }}>
-                    <div style={{ fontSize: '11px', color: '#ff3b30', marginBottom: '4px', fontWeight: '700' }}>總支出 (場地)</div>
-                    <div style={{ fontSize: '16px', fontWeight: '700', color: '#ff3b30' }}>{formatAmount(totalExpense)}</div>
-                  </div>
-                  <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#f0f6ff', padding: '12px', borderRadius: '16px' }}>
-                    <div style={{ fontSize: '11px', color: '#0071e3', marginBottom: '4px', fontWeight: '700' }}>純利潤</div>
-                    <div style={{ fontSize: '16px', fontWeight: '700', color: netProfit >= 0 ? '#34c759' : '#ff3b30' }}>{formatAmount(netProfit)}</div>
-                  </div>
-                </div>
-
-                <div style={{ marginBottom: '10px', fontWeight: '700', fontSize: '15px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>支出明細 (按場地墊支人)：</span>
-                  <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 點擊展開/折疊</span>
-                </div>
-
-                <div style={{ marginBottom: '20px' }}>
-                  {sortedPayerGroups.length === 0 ? (
-                    <div style={{ ...cardStyle, color: theme.textMuted, fontSize: '13px', textAlign: 'center', padding: '20px' }}>本月份無場地費支出紀錄</div>
+                {/* 頂部切換器：月檢視 vs 年檢視 */}
+                <div style={{ ...cardStyle, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  {revenueViewMode === 'month' ? (
+                    <input 
+                      type="month" 
+                      value={selectedMonth} 
+                      onChange={e => setSelectedMonth(e.target.value)} 
+                      style={{ padding: '6px 10px', fontSize: '14px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }} 
+                    />
                   ) : (
-                    sortedPayerGroups.map(group => {
-                      const isPending = group.payerName === '待定';
-                      const isExpanded = !!expandedPayers[group.payerName];
-
-                      return (
-                        <div key={group.payerName} style={{ ...cardStyle, padding: '0', overflow: 'hidden', borderLeft: isPending ? '5px solid #ff9500' : '5px solid #0071e3', marginBottom: '12px' }}>
-                          <div 
-                            onClick={() => togglePayerExpand(group.payerName)}
-                            style={{ 
-                              padding: '16px', 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center', 
-                              cursor: 'pointer', 
-                              backgroundColor: isPending ? (isDarkMode ? '#3b2811' : '#fffcf0') : theme.cardBg,
-                              userSelect: 'none'
-                            }}>
-                            <div>
-                              <span style={{ fontWeight: '700', fontSize: '15px', color: isPending ? '#ff9500' : theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                {icons.user} 墊支人：{group.payerName}
-                              </span>
-                              <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
-                                共 {group.items.length} 筆場地預訂紀錄
-                              </div>
-                            </div>
-
-                            <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontSize: '15px', fontWeight: '700', color: '#ff3b30' }}>
-                                {formatAmount(group.total)}
-                              </span>
-                              <span style={{ fontSize: '12px', color: theme.textMuted, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
-                                ▼
-                              </span>
-                            </div>
-                          </div>
-
-                          {isExpanded && (
-                            <div style={{ borderTop: `1px solid ${theme.border}`, backgroundColor: isDarkMode ? '#151515' : '#fafafc', padding: '12px' }}>
-                              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left', color: theme.textPrimary }}>
-                                <thead>
-                                  <tr style={{ borderBottom: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: '12px' }}>
-                                    <th style={{ padding: '8px 6px' }}>日期</th>
-                                    <th style={{ padding: '8px 6px' }}>時間</th>
-                                    <th style={{ padding: '8px 6px' }}>場地 (課程)</th>
-                                    <th style={{ padding: '8px 6px', textAlign: 'right' }}>價錢</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {group.items.map(item => (
-                                    <tr 
-                                      key={item.id} 
-                                      onDoubleClick={() => setSelectedLessonModal(item)}
-                                      style={{ borderBottom: `1px dashed ${theme.border}`, cursor: 'pointer' }}
-                                      title="雙擊編輯此課堂">
-                                      <td style={{ padding: '8px 6px', color: theme.textPrimary }}>{item.date.substring(5)}</td>
-                                      <td style={{ padding: '8px 6px', color: theme.textSecondary }}>{item.startTime}</td>
-                                      <td style={{ padding: '8px 6px' }}>
-                                        <strong style={{ color: '#0071e3' }}>{item.court || '體育館'}</strong>
-                                        <div style={{ fontSize: '11px', color: theme.textMuted }}>{item.courseName}</div>
-                                      </td>
-                                      <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: '700', color: '#ff3b30' }}>
-                                        {formatAmount(item.courtFee)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-
-                <div style={{ marginBottom: '10px', fontWeight: '700', fontSize: '15px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span>課堂收入與學員繳費流水單：</span>
-                  <span style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    {icons.lightbulb} 雙擊明細行查看詳情
-                  </span>
-                </div>
-
-                <div style={{ backgroundColor: theme.cardBg, borderRadius: '20px', padding: '12px 16px', boxShadow: theme.shadow, border: `1px solid ${theme.border}`, marginBottom: '20px' }}>
-                  {monthlySchedule.length === 0 ? (
-                    <div style={{ textAlign: 'center', color: theme.textMuted, padding: '20px', fontSize: '13px' }}>此月份無課堂紀錄</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column' }}>
-                      {monthlySchedule.map((item, index) => {
-                        const totalFee = calculateTotalFee(item);
-                        const studentsSummary = item.enrolledStudents.length > 0 
-                          ? item.enrolledStudents.map(s => `${s.name}(${s.isPaid ? '已付' : '未付'})`).join(', ') 
-                          : '尚無學員';
-
-                        return (
-                          <div 
-                            key={item.id} 
-                            onDoubleClick={() => setSelectedLessonModal(item)}
-                            style={{ 
-                              display: 'flex', 
-                              justifyContent: 'space-between', 
-                              alignItems: 'center', 
-                              padding: '12px 0', 
-                              borderBottom: index < monthlySchedule.length - 1 ? `1px solid ${theme.border}` : 'none',
-                              cursor: 'pointer',
-                              userSelect: 'none'
-                            }}
-                            title="雙擊查看詳情">
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', flex: 1, minWidth: 0, paddingRight: '12px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                <span style={{ fontSize: '12px', fontWeight: '700', color: theme.textSecondary }}>{item.date}</span>
-                                <span style={{ fontSize: '12px', color: theme.textSecondary }}>{item.startTime}</span>
-                              </div>
-                              <div style={{ fontSize: '14px', fontWeight: '700', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                {icons.shuttlecock} {item.courseName}
-                              </div>
-                              <div style={{ fontSize: '12px', color: theme.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                                學員：{studentsSummary}
-                              </div>
-                            </div>
-
-                            <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                              <div style={{ fontSize: '15px', fontWeight: '700', color: '#34c759' }}>
-                                {formatAmount(totalFee)}
-                              </div>
-                              <div style={{ fontSize: '11px', color: theme.textMuted }}>
-                                {item.feeMode === 'per_person' ? '每人收費' : '整堂收費'}
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '14px', fontWeight: '700', color: theme.textSecondary }}>選擇年度：</span>
+                      <select 
+                        value={selectedYear} 
+                        onChange={e => setSelectedYear(e.target.value)} 
+                        style={{ padding: '6px 12px', fontSize: '14px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, fontWeight: '700' }}>
+                        {[2024, 2025, 2026, 2027, 2028].map(y => (
+                          <option key={y} value={String(y)} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{y} 年</option>
+                        ))}
+                      </select>
                     </div>
                   )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <div style={{ 
+                      backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8', 
+                      borderRadius: '12px', padding: '2px', display: 'flex', position: 'relative', width: '96px', height: '28px', boxSizing: 'border-box' 
+                    }}>
+                      <div style={{
+                        position: 'absolute', top: '2px', bottom: '2px',
+                        left: revenueViewMode === 'month' ? '2px' : 'calc(50% + 1px)',
+                        width: 'calc(50% - 3px)',
+                        backgroundColor: theme.cardBg, borderRadius: '10px',
+                        boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
+                        transition: 'left 0.25s cubic-bezier(0.25, 1, 0.5, 1)'
+                      }} />
+                      <button 
+                        onClick={() => setRevenueViewMode('month')}
+                        style={{ flex: 1, border: 'none', background: 'transparent', color: revenueViewMode === 'month' ? theme.textPrimary : theme.textSecondary, fontSize: '12px', fontWeight: '600', padding: '0', cursor: 'pointer', zIndex: 1, textAlign: 'center' }}>
+                        月
+                      </button>
+                      <button 
+                        onClick={() => setRevenueViewMode('year')}
+                        style={{ flex: 1, border: 'none', background: 'transparent', color: revenueViewMode === 'year' ? theme.textPrimary : theme.textSecondary, fontSize: '12px', fontWeight: '600', padding: '0', cursor: 'pointer', zIndex: 1, textAlign: 'center' }}>
+                        年
+                      </button>
+                    </div>
+
+                    <button 
+                      onClick={() => setShowAmount(!showAmount)} 
+                      style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px', backgroundColor: showAmount ? theme.inputBg : '#0071e3', color: showAmount ? theme.textPrimary : '#fff', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', height: '28px' }}
+                      title={showAmount ? '隱藏金額' : '顯示金額'}>
+                      {showAmount ? icons.eyeOff : icons.eye}
+                    </button>
+                  </div>
                 </div>
+
+                {/* ===== 月度檢視 (MONTH VIEW) ===== */}
+                {revenueViewMode === 'month' && (
+                  <div>
+                    {/* 月度核心四大數據 */}
+                    <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center', padding: '14px' }}>
+                      <div style={{ backgroundColor: isDarkMode ? '#1b3320' : '#f2f9f4', padding: '12px', borderRadius: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#34c759', marginBottom: '4px', fontWeight: '700' }}>預計收入 (全月已排課)</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#34c759' }}>{formatAmount(estimatedIncome)}</div>
+                      </div>
+                      <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#f0f6ff', padding: '12px', borderRadius: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#0071e3', marginBottom: '4px', fontWeight: '700' }}>實收收入 (已上堂已繳費)</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#0071e3' }}>{formatAmount(totalIncome)}</div>
+                      </div>
+                      <div style={{ backgroundColor: isDarkMode ? '#3a1c1c' : '#fff5f5', padding: '12px', borderRadius: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#ff3b30', marginBottom: '4px', fontWeight: '700' }}>總支出 (場地)</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#ff3b30' }}>{formatAmount(totalExpense)}</div>
+                      </div>
+                      <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#f0f6ff', padding: '12px', borderRadius: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#0071e3', marginBottom: '4px', fontWeight: '700' }}>純利潤 (實收 - 支出)</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: netProfit >= 0 ? '#34c759' : '#ff3b30' }}>{formatAmount(netProfit)}</div>
+                      </div>
+                    </div>
+
+                    {/* 收款途徑對帳小計 */}
+                    <div style={{ ...cardStyle, padding: '12px 14px', marginBottom: '14px' }}>
+                      <div style={{ fontSize: '12px', fontWeight: '700', color: theme.textSecondary, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {icons.money} 本月收款途徑對帳小計：
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', textAlign: 'center' }}>
+                        {['FPS', 'PayMe', '現金', '銀行轉帳'].map(m => (
+                          <div key={m} style={{ backgroundColor: theme.inputBg, padding: '6px 4px', borderRadius: '10px' }}>
+                            <div style={{ fontSize: '10px', color: theme.textMuted }}>{m}</div>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: theme.textPrimary, marginTop: '2px' }}>
+                              {formatAmount(paymentMethodStats[m] || 0)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 支出明細 (按場地墊支人) */}
+                    <div style={{ marginBottom: '10px', fontWeight: '700', fontSize: '15px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>支出明細 (按場地墊支人)：</span>
+                      <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 點擊展開/折疊</span>
+                    </div>
+
+                    <div style={{ marginBottom: '20px' }}>
+                      {sortedPayerGroups.length === 0 ? (
+                        <div style={{ ...cardStyle, color: theme.textMuted, fontSize: '13px', textAlign: 'center', padding: '20px' }}>本月份無場地費支出紀錄</div>
+                      ) : (
+                        sortedPayerGroups.map(group => {
+                          const isPending = group.payerName === '待定';
+                          const isExpanded = !!expandedPayers[group.payerName];
+
+                          return (
+                            <div key={group.payerName} style={{ ...cardStyle, padding: '0', overflow: 'hidden', borderLeft: isPending ? '5px solid #ff9500' : '5px solid #0071e3', marginBottom: '12px' }}>
+                              <div 
+                                onClick={() => togglePayerExpand(group.payerName)}
+                                style={{ 
+                                  padding: '16px', 
+                                  display: 'flex', 
+                                  justifyContent: 'space-between', 
+                                  alignItems: 'center', 
+                                  cursor: 'pointer', 
+                                  backgroundColor: isPending ? (isDarkMode ? '#3b2811' : '#fffcf0') : theme.cardBg,
+                                  userSelect: 'none'
+                                }}>
+                                <div>
+                                  <span style={{ fontWeight: '700', fontSize: '15px', color: isPending ? '#ff9500' : theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    {icons.user} 墊支人：{group.payerName}
+                                  </span>
+                                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
+                                    共 {group.items.length} 筆場地預訂紀錄
+                                  </div>
+                                </div>
+
+                                <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ fontSize: '15px', fontWeight: '700', color: '#ff3b30' }}>
+                                    {formatAmount(group.total)}
+                                  </span>
+                                  <span style={{ fontSize: '12px', color: theme.textMuted, transition: 'transform 0.2s', transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+                                    ▼
+                                  </span>
+                                </div>
+                              </div>
+
+                              {isExpanded && (
+                                <div style={{ borderTop: `1px solid ${theme.border}`, backgroundColor: isDarkMode ? '#151515' : '#fafafc', padding: '12px' }}>
+                                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left', color: theme.textPrimary }}>
+                                    <thead>
+                                      <tr style={{ borderBottom: `1px solid ${theme.border}`, color: theme.textSecondary, fontSize: '12px' }}>
+                                        <th style={{ padding: '8px 6px' }}>日期</th>
+                                        <th style={{ padding: '8px 6px' }}>時間</th>
+                                        <th style={{ padding: '8px 6px' }}>場地 (課程)</th>
+                                        <th style={{ padding: '8px 6px', textAlign: 'right' }}>價錢</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {group.items.map(item => (
+                                        <tr 
+                                          key={item.id} 
+                                          onDoubleClick={() => setSelectedLessonModal(item)}
+                                          style={{ borderBottom: `1px dashed ${theme.border}`, cursor: 'pointer' }}
+                                          title="雙擊編輯此課堂">
+                                          <td style={{ padding: '8px 6px', color: theme.textPrimary }}>{item.date.substring(5)}</td>
+                                          <td style={{ padding: '8px 6px', color: theme.textSecondary }}>{item.startTime}</td>
+                                          <td style={{ padding: '8px 6px' }}>
+                                            <strong style={{ color: '#0071e3' }}>{item.court || '體育館'}</strong>
+                                            <div style={{ fontSize: '11px', color: theme.textMuted }}>{item.courseName}</div>
+                                          </td>
+                                          <td style={{ padding: '8px 6px', textAlign: 'right', fontWeight: '700', color: '#ff3b30' }}>
+                                            {formatAmount(item.courtFee)}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* 收入詳細流水帳 (全新重構卡片式設計) */}
+                    <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontWeight: '700', fontSize: '15px', color: theme.textSecondary }}>課堂收入詳細流水：</span>
+                      
+                      {/* 狀態過濾鈕 */}
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {[
+                          { id: 'all', label: '全部' },
+                          { id: 'unpaid', label: '未齊' },
+                          { id: 'paid', label: '已齊' }
+                        ].map(f => (
+                          <button
+                            key={f.id}
+                            onClick={() => setRevenueStatusFilter(f.id)}
+                            style={{
+                              border: 'none',
+                              padding: '4px 8px',
+                              borderRadius: '8px',
+                              fontSize: '11px',
+                              fontWeight: '700',
+                              cursor: 'pointer',
+                              backgroundColor: revenueStatusFilter === f.id ? '#0071e3' : theme.inputBg,
+                              color: revenueStatusFilter === f.id ? '#fff' : theme.textSecondary
+                            }}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '20px' }}>
+                      {(() => {
+                        const filteredLessons = monthlySchedule.filter(item => {
+                          const totalExpected = calculateTotalFee(item);
+                          const totalReceived = getLessonReceivedIncome(item);
+                          const isFullyPaid = totalExpected > 0 && totalReceived >= totalExpected;
+                          if (revenueStatusFilter === 'paid') return isFullyPaid;
+                          if (revenueStatusFilter === 'unpaid') return !isFullyPaid;
+                          return true;
+                        });
+
+                        if (filteredLessons.length === 0) {
+                          return (
+                            <div style={{ ...cardStyle, textAlign: 'center', color: theme.textMuted, padding: '24px', fontSize: '13px' }}>
+                              沒有符合條件的課堂收費紀錄
+                            </div>
+                          );
+                        }
+
+                        return filteredLessons.map(item => {
+                          const totalExpected = calculateTotalFee(item);
+                          const totalReceived = getLessonReceivedIncome(item);
+                          const isFullyPaid = totalExpected > 0 && totalReceived >= totalExpected;
+                          const studentExpectedFee = getStudentExpectedFee(item);
+
+                          return (
+                            <div 
+                              key={item.id} 
+                              onDoubleClick={() => setSelectedLessonModal(item)}
+                              style={{ 
+                                ...cardStyle, 
+                                padding: '14px', 
+                                borderLeft: isFullyPaid ? '5px solid #34c759' : '5px solid #ff9500', 
+                                marginBottom: '12px',
+                                cursor: 'pointer'
+                              }}
+                              title="雙擊編輯此課堂">
+                              
+                              {/* 卡片頂部：日期時間 + 課程名稱 + 實收進度標籤 */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                <div>
+                                  <div style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>
+                                    {item.date} {item.startTime}{item.endTime ? ` - ${item.endTime}` : ''}
+                                  </div>
+                                  <strong style={{ fontSize: '15px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                    {icons.shuttlecock} {item.courseName}
+                                  </strong>
+                                  <div style={{ fontSize: '12px', color: theme.textMuted, marginTop: '2px' }}>
+                                    {icons.location} {item.court || '體育館'}
+                                  </div>
+                                </div>
+
+                                <div style={{ textAlign: 'right' }}>
+                                  <span style={{ 
+                                    fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '6px', 
+                                    backgroundColor: isFullyPaid ? (isDarkMode ? '#1b3320' : '#eaf8ec') : (isDarkMode ? '#3b2511' : '#fef3e5'), 
+                                    color: isFullyPaid ? '#34c759' : '#ff9500' 
+                                  }}>
+                                    {isFullyPaid ? '✓ 已收齊' : `尚欠 ${formatAmount(totalExpected - totalReceived)}`}
+                                  </span>
+                                  <div style={{ fontSize: '14px', fontWeight: '800', color: isFullyPaid ? '#34c759' : '#ff9500', marginTop: '4px' }}>
+                                    實收 {formatAmount(totalReceived)}
+                                  </div>
+                                  <div style={{ fontSize: '11px', color: theme.textMuted }}>
+                                    應收 {formatAmount(totalExpected)}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 卡片學員明細：列出每位學員的收款狀態與收款方式 */}
+                              <div style={{ borderTop: `1px solid ${theme.border}`, paddingTop: '8px', marginTop: '8px' }}>
+                                <div style={{ fontSize: '11px', color: theme.textSecondary, fontWeight: '700', marginBottom: '6px' }}>
+                                  學員繳費詳情 ({item.enrolledStudents.length}/{item.maxCapacity}人)：
+                                </div>
+                                {item.enrolledStudents.length === 0 ? (
+                                  <span style={{ fontSize: '12px', color: theme.textMuted }}>尚無學員報名</span>
+                                ) : (
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    {item.enrolledStudents.map((st, idx) => (
+                                      <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '12px', backgroundColor: theme.inputBg, padding: '4px 8px', borderRadius: '8px' }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                          <span style={{ width: '7px', height: '7px', borderRadius: '50%', backgroundColor: st.isPaid ? '#34c759' : '#ff3b30' }}></span>
+                                          <strong style={{ color: theme.textPrimary }}>{st.name}</strong>
+                                          <span style={{ fontSize: '10px', color: theme.textMuted }}>({st.payMethod || 'FPS'})</span>
+                                        </span>
+                                        <span style={{ fontWeight: '700', color: st.isPaid ? '#34c759' : '#ff3b30' }}>
+                                          {st.isPaid ? `已付 ${formatAmount(studentExpectedFee)}` : `未付 ${formatAmount(studentExpectedFee)}`}
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+                )}
+
+                {/* ===== 年度檢視 (YEAR VIEW) ===== */}
+                {revenueViewMode === 'year' && (
+                  <div className="apple-fade-in">
+                    {/* 年度核心四大數據 */}
+                    <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center', padding: '14px' }}>
+                      <div style={{ backgroundColor: isDarkMode ? '#1b3320' : '#f2f9f4', padding: '12px', borderRadius: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#34c759', marginBottom: '4px', fontWeight: '700' }}>全年預計總收入</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#34c759' }}>{formatAmount(yearlyExpectedIncome)}</div>
+                      </div>
+                      <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#f0f6ff', padding: '12px', borderRadius: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#0071e3', marginBottom: '4px', fontWeight: '700' }}>全年實收總收入</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#0071e3' }}>{formatAmount(yearlyTotalIncome)}</div>
+                      </div>
+                      <div style={{ backgroundColor: isDarkMode ? '#3a1c1c' : '#fff5f5', padding: '12px', borderRadius: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#ff3b30', marginBottom: '4px', fontWeight: '700' }}>全年場地總支出</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: '#ff3b30' }}>{formatAmount(yearlyTotalExpense)}</div>
+                      </div>
+                      <div style={{ backgroundColor: isDarkMode ? '#1a2936' : '#f0f6ff', padding: '12px', borderRadius: '16px' }}>
+                        <div style={{ fontSize: '11px', color: '#0071e3', marginBottom: '4px', fontWeight: '700' }}>全年純利潤 (實收 - 支出)</div>
+                        <div style={{ fontSize: '16px', fontWeight: '700', color: yearlyNetProfit >= 0 ? '#34c759' : '#ff3b30' }}>{formatAmount(yearlyNetProfit)}</div>
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '10px', fontWeight: '700', fontSize: '15px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span>{selectedYear} 年各月份收支一覽：</span>
+                      <span style={{ fontSize: '12px', color: theme.textMuted }}>{icons.lightbulb} 點擊月份直接跳轉</span>
+                    </div>
+
+                    {/* 1 至 12 月份財務明細列表 */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
+                      {monthlyBreakdown.map(m => (
+                        <div 
+                          key={m.monthStr}
+                          onClick={() => {
+                            setSelectedMonth(m.monthStr);
+                            setRevenueViewMode('month');
+                          }}
+                          style={{
+                            ...cardStyle,
+                            padding: '12px 14px',
+                            marginBottom: '0',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            userSelect: 'none',
+                            borderLeft: m.monthStr === getMonthString(realTodayStr) ? '5px solid #0071e3' : `1px solid ${theme.border}`
+                          }}>
+                          <div>
+                            <div style={{ fontSize: '15px', fontWeight: '800', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {m.monthNum} 月 
+                              {m.monthStr === getMonthString(realTodayStr) && (
+                                <span style={{ fontSize: '10px', backgroundColor: '#0071e3', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>本月</span>
+                              )}
+                            </div>
+                            <div style={{ fontSize: '12px', color: theme.textSecondary, marginTop: '2px' }}>
+                              共 {m.lessonsCount} 堂課
+                            </div>
+                          </div>
+
+                          <div style={{ textAlign: 'right', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div>
+                              <div style={{ fontSize: '13px', fontWeight: '700', color: '#34c759' }}>
+                                實收 {formatAmount(m.totalIncome)}
+                              </div>
+                              <div style={{ fontSize: '11px', color: '#ff3b30' }}>
+                                支出 {formatAmount(m.totalExpense)}
+                              </div>
+                            </div>
+                            <div style={{ minWidth: '60px', textAlign: 'right' }}>
+                              <div style={{ fontSize: '14px', fontWeight: '800', color: m.net >= 0 ? '#0071e3' : '#ff3b30' }}>
+                                {formatAmount(m.net)}
+                              </div>
+                              <div style={{ fontSize: '10px', color: theme.textMuted }}>純利</div>
+                            </div>
+                            <span style={{ color: theme.textMuted, fontSize: '14px' }}>❯</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -2358,119 +2657,4 @@
                         value={renewForm.endTime} 
                         onChange={e => setRenewForm({ ...renewForm, endTime: e.target.value })} 
                         required 
-                        style={{ ...inputStyle, marginTop: '4px' }} 
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>球場地點</label>
-                    <input 
-                      placeholder="球場地點" 
-                      value={renewForm.court} 
-                      onChange={e => setRenewForm({ ...renewForm, court: e.target.value })} 
-                      style={{ ...inputStyle, marginTop: '4px' }} 
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>場地費墊支人</label>
-                    <select 
-                      value={renewForm.courtPayer} 
-                      onChange={e => setRenewForm({ ...renewForm, courtPayer: e.target.value })} 
-                      style={{ ...inputStyle, marginTop: '4px' }}>
-                      {courtPayers.map(p => (
-                        <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={{ backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => setRenewForm({ ...renewForm, keepStudents: !renewForm.keepStudents })}>
-                    <input 
-                      type="checkbox" 
-                      checked={renewForm.keepStudents} 
-                      onChange={e => setRenewForm({ ...renewForm, keepStudents: e.target.checked })} 
-                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                    />
-                    <label style={{ fontSize: '13px', color: theme.textPrimary, cursor: 'pointer', userSelect: 'none', fontWeight: '600' }}>
-                      帶入原學員名單 (付款狀態重置)
-                    </label>
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                    <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
-                      確認續堂
-                    </button>
-                    <button type="button" onClick={() => setShowRenewModal(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
-                      取消
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          <nav 
-            ref={navContainerRef}
-            style={{ 
-              position: 'fixed', bottom: 0, left: 0, right: 0, 
-              backgroundColor: isDarkMode ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.88)',
-              backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-              borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, 
-              display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-              paddingTop: '8px', paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 12px))', 
-              zIndex: 1000, maxWidth: '480px', margin: '0 auto', boxSizing: 'border-box' 
-            }}>
-            
-            <div style={{
-              position: 'absolute',
-              top: '8px',
-              bottom: 'calc(8px + env(safe-area-inset-bottom, 12px))',
-              left: `${capsuleStyle.left}px`,
-              width: `${capsuleStyle.width}px`,
-              opacity: capsuleStyle.opacity,
-              transition: 'left 0.35s cubic-bezier(0.25, 1, 0.5, 1), width 0.35s cubic-bezier(0.25, 1, 0.5, 1)',
-              backgroundColor: isDarkMode ? 'rgba(0, 113, 227, 0.25)' : 'rgba(0, 113, 227, 0.12)',
-              borderRadius: '16px',
-              pointerEvents: 'none',
-              zIndex: 1
-            }} />
-
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.id;
-              return (
-                <button 
-                  key={tab.id}
-                  ref={el => tabRefs.current[tab.id] = el}
-                  onClick={() => setActiveTab(tab.id)} 
-                  style={{ 
-                    flex: 1,
-                    border: 'none', backgroundColor: 'transparent', 
-                    color: isActive ? '#0071e3' : theme.textMuted, 
-                    fontSize: '11px', fontWeight: isActive ? '700' : '500',
-                    cursor: 'pointer', display: 'flex', flexDirection: 'column', 
-                    alignItems: 'center', gap: '3px', position: 'relative', zIndex: 2,
-                    padding: '6px 0',
-                    transition: 'color 0.3s'
-                  }}>
-                  <div style={{
-                    transform: isActive ? 'scale(1.15)' : 'scale(1)',
-                    transition: 'transform 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    {icons[tab.icon]}
-                  </div>
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      );
-    }
-
-    const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<BadmintonCoachApp />);
-  </script>
-</body>
-</html>
+                        style={{ ...inputStyle, marginTop: '4px'
