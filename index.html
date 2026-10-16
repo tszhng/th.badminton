@@ -13,14 +13,8 @@
   <meta name="apple-mobile-web-app-title" content="TH.badminton">
   <style>
     @keyframes fadeInUp {
-      from {
-        opacity: 0;
-        transform: translateY(10px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
     }
     @keyframes fadeTransition {
       from { opacity: 0; transform: translateY(6px); }
@@ -28,6 +22,20 @@
     }
     .apple-fade-in {
       animation: fadeTransition 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+    @keyframes slideFromRight {
+      from { opacity: 0.2; transform: translateX(24px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    @keyframes slideFromLeft {
+      from { opacity: 0.2; transform: translateX(-24px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+    .month-slide-next {
+      animation: slideFromRight 0.28s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+    }
+    .month-slide-prev {
+      animation: slideFromLeft 0.28s cubic-bezier(0.25, 1, 0.5, 1) forwards;
     }
     .no-scrollbar::-webkit-scrollbar {
       display: none;
@@ -45,8 +53,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.5.7";
-      const LAST_UPDATED = "2026-10-15 18:15";
+      const APP_VERSION = "v4.6.2";
+      const LAST_UPDATED = "2026-10-16 14:15";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -90,10 +98,15 @@
       const [selectedDate, setSelectedDate] = useState(todayStr);
       const [selectedMonth, setSelectedMonth] = useState(getMonthString(todayStr));
 
-      const [calendarViewMode, setCalendarViewMode] = useState('week');
+      // 預設為月曆模式
+      const [calendarViewMode, setCalendarViewMode] = useState('month');
       const [showAmount, setShowAmount] = useState(false);
       const [activeTab, setActiveTab] = useState('schedule');
       const [expandedPayers, setExpandedPayers] = useState({});
+
+      const [monthSlideDir, setMonthSlideDir] = useState('');
+      const touchStartXRef = useRef(0);
+      const touchStartYRef = useRef(0);
 
       const [scrolled, setScrolled] = useState(false);
 
@@ -109,8 +122,16 @@
         return () => window.removeEventListener('scroll', handleScroll);
       }, []);
 
+      // 監聽 activeTab，只要回到課表頁，強制重置為今天與月模式
       useEffect(() => {
         window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (activeTab === 'schedule') {
+          const realToday = getRealTodayString();
+          setTodayStr(realToday);
+          setSelectedDate(realToday);
+          setSelectedMonth(getMonthString(realToday));
+          setCalendarViewMode('month');
+        }
       }, [activeTab]);
 
       const tabs = [
@@ -155,9 +176,7 @@
 
       const weekDateRefs = useRef({});
 
-      const selectDate = (dateStr) => {
-        setSelectedDate(dateStr);
-        setSelectedMonth(getMonthString(dateStr));
+      const scrollToDateInWeek = (dateStr) => {
         if (weekDateRefs.current[dateStr]) {
           weekDateRefs.current[dateStr].scrollIntoView({
             behavior: 'smooth',
@@ -167,14 +186,74 @@
         }
       };
 
+      const selectDate = (dateStr) => {
+        setSelectedDate(dateStr);
+        setSelectedMonth(getMonthString(dateStr));
+        scrollToDateInWeek(dateStr);
+      };
+
       const handleGoToday = () => {
         const realToday = getRealTodayString();
         setTodayStr(realToday);
-        selectDate(realToday);
+        setSelectedDate(realToday);
+        setSelectedMonth(getMonthString(realToday));
+        scrollToDateInWeek(realToday);
       };
 
       const switchView = (mode) => {
         setCalendarViewMode(mode);
+        const realToday = getRealTodayString();
+        setTodayStr(realToday);
+        setSelectedDate(realToday);
+        setSelectedMonth(getMonthString(realToday));
+      };
+
+      // 監聽模式與日期變更，當進入周檢視時確保將目標置中
+      useEffect(() => {
+        if (calendarViewMode === 'week') {
+          const timer = setTimeout(() => {
+            scrollToDateInWeek(selectedDate);
+          }, 60);
+          return () => clearTimeout(timer);
+        }
+      }, [calendarViewMode, selectedDate]);
+
+      // 月份滑動切換邏輯
+      const changeMonthByOffset = (offset) => {
+        const [y, m] = selectedMonth.split('-').map(Number);
+        const nextD = new Date(y, m - 1 + offset, 1);
+        const ny = nextD.getFullYear();
+        const nm = String(nextD.getMonth() + 1).padStart(2, '0');
+        const nextMonthStr = `${ny}-${nm}`;
+        
+        setMonthSlideDir(offset > 0 ? 'month-slide-next' : 'month-slide-prev');
+        setSelectedMonth(nextMonthStr);
+
+        const realToday = getRealTodayString();
+        if (nextMonthStr === getMonthString(realToday)) {
+          setSelectedDate(realToday);
+        } else {
+          setSelectedDate(`${nextMonthStr}-01`);
+        }
+      };
+
+      const handleMonthTouchStart = (e) => {
+        touchStartXRef.current = e.touches[0].clientX;
+        touchStartYRef.current = e.touches[0].clientY;
+      };
+
+      const handleMonthTouchEnd = (e) => {
+        const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+        const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+        
+        // 水平滑動距離大於 45px 且大於垂直滑動時觸發
+        if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY)) {
+          if (deltaX < 0) {
+            changeMonthByOffset(1); // 向左滑 -> 下個月
+          } else {
+            changeMonthByOffset(-1); // 向右滑 -> 上個月
+          }
+        }
       };
 
       useEffect(() => {
@@ -947,11 +1026,21 @@
       const renderMonth = () => {
         const gridDays = getFull6WeeksGrid(selectedMonth);
         return (
-          <div style={{ backgroundColor: theme.cardBg, borderRadius: '24px', padding: '14px', boxShadow: theme.shadow, border: `1px solid ${theme.border}` }}>
+          <div 
+            onTouchStart={handleMonthTouchStart}
+            onTouchEnd={handleMonthTouchEnd}
+            style={{ 
+              backgroundColor: theme.cardBg, borderRadius: '24px', padding: '14px', 
+              boxShadow: theme.shadow, border: `1px solid ${theme.border}`, touchAction: 'pan-y'
+            }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: theme.textSecondary, marginBottom: '8px' }}>
               {weekLabels.map((w, idx) => <div key={idx}>{w}</div>)}
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}>
+            <div 
+              key={selectedMonth} 
+              className={monthSlideDir}
+              onAnimationEnd={() => setMonthSlideDir('')}
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}>
               {gridDays.map(({ dateStr, dayNum, isCurrentMonth }) => {
                 const isSelected = dateStr === selectedDate;
                 const isToday = dateStr === realTodayStr;
@@ -985,7 +1074,7 @@
                     key={dateStr}
                     onClick={() => selectDate(dateStr)}
                     style={{
-                      height: '46px',
+                      height: '36px',
                       display: 'flex',
                       flexDirection: 'column',
                       alignItems: 'center',
@@ -994,20 +1083,20 @@
                       color: textColor,
                       fontSize: '13px',
                       fontWeight: isSelected || isToday || isWithin7Days ? '700' : '500',
-                      borderRadius: '12px',
+                      borderRadius: '10px',
                       cursor: 'pointer',
                       position: 'relative',
                       opacity: isCurrentMonth || isWithin7Days ? 1 : 0.35,
                       border: `1.5px solid ${borderColor}`,
                       boxShadow: isSelected ? '0 4px 12px rgba(0, 113, 227, 0.3)' : 'none',
-                      transition: 'all 0.2s'
+                      transition: 'background-color 0.15s, border 0.15s, color 0.15s'
                     }}>
                     {dayNum}
                     {hasLesson && (
                       <div style={{
-                        width: '4px', height: '4px', borderRadius: '50%',
+                        width: '3.5px', height: '3.5px', borderRadius: '50%',
                         backgroundColor: isSelected ? '#ffffff' : '#0071e3',
-                        position: 'absolute', bottom: '5px'
+                        position: 'absolute', bottom: '3px'
                       }} />
                     )}
                   </div>
@@ -1035,7 +1124,7 @@
                 {icons.calendar} {formattedTitle}
               </span>
               <span style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                雙擊卡片加學員 / 管理
+                {icons.lightbulb} 雙擊卡片加學員 / 管理
               </span>
             </div>
 
@@ -1055,6 +1144,7 @@
                     style={{ 
                       ...cardStyle, 
                       borderLeft: overlapped ? '5px solid #ff3b30' : '5px solid #0071e3', 
+                      border: overlapped ? '1.5px solid #ff3b30' : `1px solid ${theme.border}`,
                       backgroundColor: overlapped ? (isDarkMode ? '#3a1c1c' : '#fff2f2') : theme.cardBg,
                       cursor: 'pointer', 
                       userSelect: 'none',
@@ -1083,7 +1173,12 @@
                     </div>
 
                     <div style={{ fontSize: '13px', color: theme.textPrimary, marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${theme.border}` }}>
-                      <strong>學員：</strong> {item.enrolledStudents.length > 0 ? item.enrolledStudents.map(s => `● ${s.name}`).join('  ') : '尚無學員報名'}
+                      <strong>學員：</strong> {item.enrolledStudents.length > 0 ? item.enrolledStudents.map(s => (
+                        <span key={s.name} style={{ marginRight: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: s.isPaid ? '#34c759' : '#ff3b30', display: 'inline-block' }}></span>
+                          {s.name}
+                        </span>
+                      )) : '尚無學員報名'}
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
@@ -1177,19 +1272,23 @@
                     border: `1px solid ${theme.border}`, borderRadius: '20px', 
                     boxShadow: '0 10px 30px rgba(0,0,0,0.15)', padding: '16px', zIndex: 1600 
                   }}>
-                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#ff9500', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
+                    <div style={{ fontWeight: '700', fontSize: '14px', color: '#ff9500', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.bell} 課堂與訂場提醒</span>
                       <span style={{ fontSize: '11px', color: theme.textMuted }}>{realTodayStr}</span>
                     </div>
 
-                    <div style={{ fontSize: '13px', color: theme.textPrimary, marginBottom: '10px' }}>
-                      <strong>{icons.location} 明天上課通知 ({tomorrowLessons.length} 堂) [{tomorrowStr}]：</strong>
+                    <div style={{ fontSize: '13px', color: theme.textPrimary, marginBottom: '12px' }}>
+                      <div style={{ fontWeight: '700', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {icons.location} 明天上課通知 ({tomorrowStr})：
+                      </div>
                       {tomorrowLessons.length === 0 ? (
-                        <div style={{ color: theme.textMuted, marginTop: '2px' }}>明天沒有排課</div>
+                        <div style={{ color: theme.textMuted, fontSize: '12px', paddingLeft: '4px' }}>明天沒有排課</div>
                       ) : (
                         tomorrowLessons.map(item => (
-                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', padding: '4px 6px', backgroundColor: theme.cardBg, borderRadius: '4px', border: `1px solid ${isDarkMode ? '#443a1a' : '#ffe082'}` }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.shuttlecock} {item.courseName} ({item.startTime})</span>
+                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', padding: '6px 8px', backgroundColor: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
+                              {icons.shuttlecock} {item.courseName} ({item.startTime})
+                            </span>
                             <button 
                               onClick={() => {
                                 if (item.enrolledStudents.length === 0) { alert('該課堂尚未有學員'); return; }
@@ -1197,7 +1296,7 @@
                                 const match = students.find(s => s.name === firstSt.name);
                                 openWhatsApp(match ? match.phone : '');
                               }}
-                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
                               {icons.whatsapp} WhatsApp
                             </button>
                           </div>
@@ -1206,13 +1305,17 @@
                     </div>
 
                     <div style={{ fontSize: '13px', color: theme.textPrimary }}>
-                      <strong>{icons.calendar} 7 天後課堂 / Book場 ({day7Str})：</strong>
+                      <div style={{ fontWeight: '700', marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        {icons.calendar} 7 天後課堂 / Book場 ({day7Str})：
+                      </div>
                       {day7Lessons.length === 0 ? (
-                        <div style={{ color: theme.textMuted, marginTop: '2px' }}>7天後 ({day7Str}) 無安排課堂</div>
+                        <div style={{ color: theme.textMuted, fontSize: '12px', paddingLeft: '4px' }}>7天後 ({day7Str}) 無安排課堂</div>
                       ) : (
                         day7Lessons.map(item => (
-                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '4px', padding: '4px 6px', backgroundColor: theme.cardBg, borderRadius: '4px', border: `1px solid ${isDarkMode ? '#443a1a' : '#ffe082'}` }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.shuttlecock} {item.courseName} ({item.startTime})</span>
+                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', padding: '6px 8px', backgroundColor: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
+                              {icons.shuttlecock} {item.courseName} ({item.startTime})
+                            </span>
                             <button 
                               onClick={() => {
                                 if (item.enrolledStudents.length === 0) { alert('該課堂尚未有學員'); return; }
@@ -1220,7 +1323,7 @@
                                 const match = students.find(s => s.name === firstSt.name);
                                 openWhatsApp(match ? match.phone : '');
                               }}
-                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '2px 6px', backgroundColor: '#0088cc', color: '#fff', border: 'none', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
                               {icons.whatsapp} WhatsApp
                             </button>
                           </div>
@@ -1890,34 +1993,36 @@
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課堂費 (HK$)</label>
                       <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
+                      <select 
+                        value={lessonForm.courtPayer} 
+                        onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} 
+                        style={{ ...inputStyle, marginTop: '4px', marginBottom: lessonForm.courtPayer === '__CUSTOM__' ? '6px' : '0' }}>
+                        {courtPayers.map(p => (
+                          <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
+                        ))}
+                        <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新增墊支人...</option>
+                      </select>
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費 (HK$)</label>
                       <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
-                    <select 
-                      value={lessonForm.courtPayer} 
-                      onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} 
-                      style={{ ...inputStyle, marginTop: '4px', marginBottom: lessonForm.courtPayer === '__CUSTOM__' ? '6px' : '0' }}>
-                      {courtPayers.map(p => (
-                        <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
-                      ))}
-                      <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新增墊支人...</option>
-                    </select>
-
-                    {lessonForm.courtPayer === '__CUSTOM__' && (
-                      <input 
-                        placeholder="請輸入新墊支人姓名" 
-                        value={lessonForm.customCourtPayer} 
-                        onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value})} 
-                        style={inputStyle}
-                        required 
-                      />
-                    )}
-                  </div>
+                  {lessonForm.courtPayer === '__CUSTOM__' && (
+                    <input 
+                      placeholder="請輸入新墊支人姓名" 
+                      value={lessonForm.customCourtPayer} 
+                      onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value})} 
+                      style={{ ...inputStyle, marginTop: '-4px', marginBottom: '4px' }}
+                      required 
+                    />
+                  )}
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
@@ -1991,41 +2096,43 @@
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課堂費 (HK$)</label>
                       <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1.2 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
+                      <select 
+                        value={courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : '__CUSTOM__'} 
+                        onChange={e => {
+                          const val = e.target.value;
+                          setLessonForm({
+                            ...lessonForm, 
+                            courtPayer: val,
+                            customCourtPayer: val === '__CUSTOM__' && !courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : ''
+                          });
+                        }} 
+                        style={{ ...inputStyle, marginTop: '4px' }}>
+                        {courtPayers.map(p => (
+                          <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
+                        ))}
+                        <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新增墊支人...</option>
+                      </select>
+                    </div>
                     <div style={{ flex: 1 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費 (HK$)</label>
                       <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
-                    <select 
-                      value={courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : '__CUSTOM__'} 
-                      onChange={e => {
-                        const val = e.target.value;
-                        setLessonForm({
-                          ...lessonForm, 
-                          courtPayer: val,
-                          customCourtPayer: val === '__CUSTOM__' && !courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : ''
-                        });
-                      }} 
-                      style={{ ...inputStyle, marginTop: '4px', marginBottom: (lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) ? '6px' : '0' }}>
-                      {courtPayers.map(p => (
-                        <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
-                      ))}
-                      <option value="__CUSTOM__" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新增墊支人...</option>
-                    </select>
-
-                    {(lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) && (
-                      <input 
-                        placeholder="請輸入新墊支人姓名" 
-                        value={lessonForm.customCourtPayer || (courtPayers.includes(lessonForm.courtPayer) ? '' : lessonForm.courtPayer)} 
-                        onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value, courtPayer: '__CUSTOM__'})} 
-                        style={inputStyle}
-                        required 
-                      />
-                    )}
-                  </div>
+                  {(lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) && (
+                    <input 
+                      placeholder="請輸入新墊支人姓名" 
+                      value={lessonForm.customCourtPayer || (courtPayers.includes(lessonForm.courtPayer) ? '' : lessonForm.courtPayer)} 
+                      onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value, courtPayer: '__CUSTOM__'})} 
+                      style={{ ...inputStyle, marginTop: '-4px', marginBottom: '4px' }}
+                      required 
+                    />
+                  )}
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
@@ -2086,7 +2193,7 @@
                     <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.textPrimary }}>
                       學員名單 ({selectedLessonModal.enrolledStudents.length} / {selectedLessonModal.maxCapacity}人)
                     </h4>
-                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>雙擊學員列查看詳情</span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 雙擊學員列查看詳情</span>
                   </div>
                   
                   {selectedLessonModal.enrolledStudents.length === 0 ? (
@@ -2104,7 +2211,10 @@
                         }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div>
-                            <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.user} {st.name}</strong>
+                            <strong style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: st.isPaid ? '#34c759' : '#ff3b30', display: 'inline-block' }}></span>
+                              {icons.user} {st.name}
+                            </strong>
                             <span style={{ marginLeft: '6px', fontSize: '12px', fontWeight: '700', color: st.isPaid ? '#34c759' : '#ff3b30' }}>
                               ({st.isPaid ? '已付' : '未付'})
                             </span>
