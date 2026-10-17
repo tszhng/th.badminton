@@ -53,8 +53,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.7.3";
-      const LAST_UPDATED = "2026-10-17 01:00";
+      const APP_VERSION = "v4.7.4";
+      const LAST_UPDATED = "2026-10-17 11:45";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -276,15 +276,40 @@
         }
       }, [activeTab]);
 
+      // 定時同步檢測真實今天日期 (自動跨日更新)
       useEffect(() => {
         const interval = setInterval(() => {
           const currentRealToday = getRealTodayString();
           if (currentRealToday !== todayStr) {
             setTodayStr(currentRealToday);
           }
-        }, 60000);
+        }, 30000);
         return () => clearInterval(interval);
       }, [todayStr]);
+
+      // 精準基於 todayStr 計算未來 7 天範圍與目標日
+      const getDateOffsetFromBase = (baseStr, offsetDays) => {
+        const [y, m, d] = baseStr.split('-').map(Number);
+        const dt = new Date(y, m - 1, d + offsetDays);
+        const ny = dt.getFullYear();
+        const nm = String(dt.getMonth() + 1).padStart(2, '0');
+        const nd = String(dt.getDate()).padStart(2, '0');
+        return `${ny}-${nm}-${nd}`;
+      };
+
+      const tomorrowStr = getDateOffsetFromBase(todayStr, 1);
+      const day7Str = getDateOffsetFromBase(todayStr, 6);
+
+      const getNext7DaysRangeFromBase = (baseStr) => {
+        const range = [];
+        for (let i = 0; i < 7; i++) {
+          range.push(getDateOffsetFromBase(baseStr, i));
+        }
+        return range;
+      };
+
+      const next7DaysList = getNext7DaysRangeFromBase(todayStr);
+      const seventhDayStr = day7Str;
 
       const [courtPayers, setCourtPayers] = useState(() => {
         const saved = localStorage.getItem('th_badminton_courtPayers');
@@ -491,45 +516,21 @@
         window.open(`https://wa.me/${cleanPhone}`, '_blank');
       };
 
-      const getDateOffsetStr = (offsetDays) => {
-        const d = new Date();
-        d.setDate(d.getDate() + offsetDays);
-        return d.toISOString().split('T')[0];
-      };
-
-      const tomorrowStr = getDateOffsetStr(1);
-      const day7Str = getDateOffsetStr(7);
-
-      const getNext7DaysRange = () => {
-        const range = [];
-        const baseDate = new Date();
-        for (let i = 0; i < 7; i++) {
-          const d = new Date(baseDate);
-          d.setDate(d.getDate() + i);
-          range.push(d.toISOString().split('T')[0]);
-        }
-        return range;
-      };
-
-      const next7DaysList = getNext7DaysRange();
-      const seventhDayStr = next7DaysList[6];
-
       const getExtendedWeeksDays = () => {
         const days = [];
-        const base = new Date();
-        base.setDate(base.getDate() - 30);
+        const [y, m, d] = todayStr.split('-').map(Number);
+        const base = new Date(y, m - 1, d - 30);
         for (let i = 0; i < 75; i++) {
-          const d = new Date(base);
-          d.setDate(base.getDate() + i);
-          const y = d.getFullYear();
-          const m = String(d.getMonth() + 1).padStart(2, '0');
-          const dayNum = String(d.getDate()).padStart(2, '0');
-          const formatted = `${y}-${m}-${dayNum}`;
+          const cur = new Date(y, m - 1, (d - 30) + i);
+          const cy = cur.getFullYear();
+          const cm = String(cur.getMonth() + 1).padStart(2, '0');
+          const dayNum = String(cur.getDate()).padStart(2, '0');
+          const formatted = `${cy}-${cm}-${dayNum}`;
           const weekNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
           days.push({
             dateStr: formatted,
             dayNum: Number(dayNum),
-            weekName: weekNames[d.getDay()]
+            weekName: weekNames[cur.getDay()]
           });
         }
         return days;
@@ -567,11 +568,10 @@
         .filter(item => item.date === selectedDate)
         .sort((a, b) => timeToMinutes(a.startTime || a.time) - timeToMinutes(b.startTime || b.time));
 
-      const realTodayStr = getRealTodayString();
+      const realTodayStr = todayStr;
       const tomorrowLessons = schedule.filter(item => item.date === tomorrowStr);
       const day7Lessons = schedule.filter(item => item.date === day7Str);
 
-      // 月度收支計算
       const monthlySchedule = schedule
         .filter(item => item.date.startsWith(selectedMonth))
         .sort((a, b) => new Date(a.date) - new Date(b.date) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
@@ -619,7 +619,6 @@
 
       const netProfit = totalIncome - totalExpense;
 
-      // 年度收支統計
       const yearlySchedule = schedule.filter(item => item.date.startsWith(selectedYear));
       let yearlyExpectedIncome = 0;
       let yearlyTotalIncome = 0;
@@ -677,7 +676,6 @@
         return a.payerName.localeCompare(b.payerName, 'zh-HK');
       });
 
-      // 複製 WhatsApp 財務摘要
       const handleCopyWhatsAppSummary = () => {
         const unpaidDetails = [];
         monthlySchedule.forEach(lesson => {
@@ -715,7 +713,6 @@
         });
       };
 
-      // 匯出 CSV 財務報表
       const handleExportCSVReport = () => {
         if (monthlySchedule.length === 0) {
           alert('本月份沒有課堂紀錄可匯出！');
@@ -752,328 +749,6 @@
         a.download = `TH_Badminton_Report_${selectedMonth}.csv`;
         a.click();
       };
-
-      const handleCancelLesson = (lessonId) => {
-        if (window.confirm("確定要取消這堂課嗎？所有學員紀錄將會移除。")) {
-          setSchedule(schedule.filter(s => s.id !== lessonId));
-          if (selectedLessonModal && selectedLessonModal.id === lessonId) {
-            setSelectedLessonModal(null);
-          }
-        }
-      };
-
-      const handleSaveLesson = (e) => {
-        e.preventDefault();
-
-        let finalCourtPayer = lessonForm.courtPayer;
-        if (lessonForm.courtPayer === '__CUSTOM__') {
-          const customPayer = lessonForm.customCourtPayer.trim();
-          if (!customPayer) {
-            alert('請輸入新墊支人姓名！');
-            return;
-          }
-          finalCourtPayer = customPayer;
-          if (!courtPayers.includes(customPayer)) {
-            setCourtPayers([...courtPayers, customPayer]);
-          }
-        }
-
-        if (lessonForm.id) {
-          setSchedule(schedule.map(item => item.id === lessonForm.id ? {
-            ...item,
-            courseName: lessonForm.courseName,
-            maxCapacity: Number(lessonForm.maxCapacity),
-            feeMode: lessonForm.feeMode,
-            coachFee: Number(lessonForm.coachFee),
-            courtFee: Number(lessonForm.courtFee),
-            courtPayer: finalCourtPayer || '待定',
-            date: lessonForm.date,
-            startTime: lessonForm.startTime,
-            endTime: lessonForm.endTime,
-            court: lessonForm.court
-          } : item));
-          setShowEditModal(false);
-          setSelectedLessonModal(null);
-        } else {
-          setSchedule([...schedule, {
-            id: Date.now(),
-            courseName: lessonForm.courseName,
-            maxCapacity: Number(lessonForm.maxCapacity),
-            feeMode: lessonForm.feeMode,
-            coachFee: Number(lessonForm.coachFee),
-            courtFee: Number(lessonForm.courtFee),
-            courtPayer: finalCourtPayer || '待定',
-            date: lessonForm.date,
-            startTime: lessonForm.startTime,
-            endTime: lessonForm.endTime,
-            court: lessonForm.court || '未定場地',
-            enrolledStudents: []
-          }]);
-          setShowAddModal(false);
-        }
-      };
-
-      const handleAddStudentToLesson = () => {
-        if (!selectedLessonModal) return;
-        
-        let targetName = addStudentSelect;
-        if (addStudentSelect === '__CUSTOM__') {
-          targetName = addStudentCustom.trim();
-          if (!targetName) { alert('請輸入新學員姓名！'); return; }
-          if (!students.some(s => s.name === targetName)) {
-            setStudents(prev => [...prev, { id: Date.now(), name: targetName, phone: '', level: '新手', notes: '透過課堂快速新增' }]);
-          }
-        }
-
-        if (!targetName) { alert('請選擇或輸入學員姓名！'); return; }
-        if (selectedLessonModal.enrolledStudents.some(s => s.name === targetName)) { alert('該學員已在名單中！'); return; }
-        if (selectedLessonModal.enrolledStudents.length >= selectedLessonModal.maxCapacity) { alert('該課節人數已滿！'); return; }
-
-        const updatedStudents = [...selectedLessonModal.enrolledStudents, { name: targetName, isPaid: false, payMethod: 'FPS' }];
-        const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
-
-        setSchedule(schedule.map(s => s.id === updatedLesson.id ? updatedLesson : s));
-        setSelectedLessonModal(updatedLesson);
-        setAddStudentSelect('');
-        setAddStudentCustom('');
-      };
-
-      const handleRemoveStudentFromLesson = (studentName) => {
-        if (!selectedLessonModal) return;
-        const updatedStudents = selectedLessonModal.enrolledStudents.filter(s => s.name !== studentName);
-        const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
-        setSchedule(schedule.map(s => s.id === updatedLesson.id ? updatedLesson : s));
-        setSelectedLessonModal(updatedLesson);
-      };
-
-      const handleTogglePaidStatus = (studentName) => {
-        if (!selectedLessonModal) return;
-        const updatedStudents = selectedLessonModal.enrolledStudents.map(s => 
-          s.name === studentName ? { ...s, isPaid: !s.isPaid } : s
-        );
-        const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
-        setSchedule(schedule.map(s => s.id === updatedLesson.id ? updatedLesson : s));
-        setSelectedLessonModal(updatedLesson);
-      };
-
-      const handleUpdatePayMethod = (studentName, payMethod) => {
-        if (!selectedLessonModal) return;
-        const updatedStudents = selectedLessonModal.enrolledStudents.map(s => 
-          s.name === studentName ? { ...s, payMethod } : s
-        );
-        const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
-        setSchedule(schedule.map(s => s.id === updatedLesson.id ? updatedLesson : s));
-        setSelectedLessonModal(updatedLesson);
-      };
-
-      const handleOpenStudentModalByName = (studentName) => {
-        const found = students.find(s => s.name === studentName);
-        if (found) {
-          setSelectedStudentModal(found);
-        } else {
-          setSelectedStudentModal({ id: Date.now(), name: studentName, phone: '', level: '新手', notes: '未在學員名單中登記完整資料' });
-        }
-      };
-
-      const handleOpenRenewModal = (item) => {
-        const currentDate = new Date(item.date);
-        currentDate.setDate(currentDate.getDate() + 7);
-        const nextDateStr = currentDate.toISOString().split('T')[0];
-
-        setRenewForm({
-          originalLesson: item,
-          date: nextDateStr,
-          startTime: item.startTime || item.time || '19:00',
-          endTime: item.endTime || '21:00',
-          court: item.court || '',
-          courtPayer: item.courtPayer || 'TH Coach',
-          keepStudents: true
-        });
-        setShowRenewModal(true);
-      };
-
-      const handleConfirmRenewLesson = (e) => {
-        e.preventDefault();
-        const item = renewForm.originalLesson;
-        if (!item) return;
-
-        const updatedStudents = renewForm.keepStudents 
-          ? item.enrolledStudents.map(s => ({ ...s, isPaid: false }))
-          : [];
-
-        const newLesson = {
-          ...item,
-          id: Date.now(),
-          date: renewForm.date,
-          startTime: renewForm.startTime,
-          endTime: renewForm.endTime,
-          court: renewForm.court,
-          courtPayer: renewForm.courtPayer,
-          enrolledStudents: updatedStudents
-        };
-
-        setSchedule([...schedule, newLesson]);
-        setShowRenewModal(false);
-        setSelectedLessonModal(null);
-        alert(`成功續堂！已排定於 ${renewForm.date} (${renewForm.startTime}-${renewForm.endTime})`);
-      };
-
-      const addToAppleCalendar = (item) => {
-        const dateStr = item.date.replace(/-/g, '');
-        const startT = (item.startTime || '00:00').replace(':', '') + '00';
-        const endT = (item.endTime || item.startTime || '00:00').replace(':', '') + '00';
-        
-        const startDT = `${dateStr}T${startT}`;
-        const endDT = `${dateStr}T${endT}`;
-
-        const studentListStr = item.enrolledStudents.map(s => s.name).join(', ') || '尚無學員';
-        const totalFee = calculateTotalFee(item);
-
-        const icsContent = [
-          'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TH.badminton App//EN', 'BEGIN:VEVENT',
-          `SUMMARY:🏸 ${item.courseName} (${item.enrolledStudents.length}/${item.maxCapacity}人)`,
-          `DESCRIPTION:學員：${studentListStr}\\n計費模式：${item.feeMode === 'per_person' ? '每人學費' : '整堂學費'}\\n課堂費：HK$${item.coachFee}\\n場地費：HK$${item.courtFee}\\n預計總學費：HK$${totalFee}`,
-          `LOCATION:${item.court || '體育館'}`, `DTSTART:${startDT}`, `DTEND:${endDT}`, 'END:VEVENT', 'END:VCALENDAR'
-        ].join('\r\n');
-
-        const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
-        const url = window.URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `badminton_${item.date}.ics`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      };
-
-      const handleSaveStudent = (e) => {
-        e.preventDefault();
-        if (!studentForm.name) return;
-
-        if (studentForm.id) {
-          setStudents(students.map(s => s.id === studentForm.id ? { ...studentForm } : s));
-          setShowEditStudentModal(false);
-          setSelectedStudentModal(studentForm);
-        } else {
-          setStudents([...students, { ...studentForm, id: Date.now() }]);
-          setShowAddStudentModal(false);
-        }
-        setStudentForm({ id: null, name: '', phone: '', level: '新手', notes: '' });
-      };
-
-      const handleDeleteStudent = (studentId, studentName) => {
-        if (window.confirm(`確定要刪除學員「${studentName}」嗎？此操作無法撤銷。`)) {
-          setStudents(students.filter(s => s.id !== studentId));
-          setSelectedStudentModal(null);
-        }
-      };
-
-      const handleSaveCourseType = (e) => {
-        e.preventDefault();
-        if (!courseTypeForm.name || !courseTypeForm.defaultCoachFee) return;
-
-        if (editingCourseTypeId) {
-          setCourseTypes(courseTypes.map(c => c.id === editingCourseTypeId ? {
-            ...c,
-            name: courseTypeForm.name,
-            maxCapacity: Number(courseTypeForm.maxCapacity),
-            feeMode: courseTypeForm.feeMode,
-            defaultCoachFee: Number(courseTypeForm.defaultCoachFee),
-            defaultCourtFee: Number(courseTypeForm.defaultCourtFee || 0)
-          } : c));
-          setEditingCourseTypeId(null);
-        } else {
-          setCourseTypes([...courseTypes, {
-            id: String(Date.now()),
-            name: courseTypeForm.name,
-            maxCapacity: Number(courseTypeForm.maxCapacity),
-            feeMode: courseTypeForm.feeMode,
-            duration: '2小時',
-            defaultCoachFee: Number(courseTypeForm.defaultCoachFee),
-            defaultCourtFee: Number(courseTypeForm.defaultCourtFee || 0)
-          }]);
-        }
-        setCourseTypeForm({ name: '', maxCapacity: 4, feeMode: 'per_person', defaultCoachFee: '', defaultCourtFee: '' });
-      };
-
-      const exportBackupData = () => {
-        const data = { courtPayers, courseTypes, students, schedule, exportDate: new Date().toLocaleString() };
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `th_badminton_backup_${getRealTodayString()}.json`;
-        a.click();
-      };
-
-      const importBackupData = (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (evt) => {
-          try {
-            const imported = JSON.parse(evt.target.result);
-            if (confirm('確定要還原備份嗎？這將會覆蓋現有資料！')) {
-              if (imported.courtPayers) setCourtPayers(imported.courtPayers);
-              if (imported.courseTypes) setCourseTypes(imported.courseTypes);
-              if (imported.students) setStudents(imported.students);
-              if (imported.schedule) setSchedule(imported.schedule);
-              alert('資料成功還原！');
-            }
-          } catch (err) { alert('檔案格式錯誤！'); }
-        };
-        reader.readAsText(file);
-      };
-
-      const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
-
-      const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, boxSizing: 'border-box', fontSize: '14px', outline: 'none' };
-      const cardStyle = { backgroundColor: theme.cardBg, color: theme.textPrimary, padding: '16px', borderRadius: '24px', marginBottom: '16px', boxSizing: 'border-box', width: '100%', boxShadow: theme.shadow, border: `1px solid ${theme.border}` };
-      const weekLabels = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-
-      const icons = {
-        shuttlecock: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l3 7-3 3-3-3 3-7z"/><path d="M9 12l-5 8h16l-5-8"/><line x1="12" y1="12" x2="12" y2="22"/></svg>,
-        calendar: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
-        revenue: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
-        user: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-        settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
-        sun: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
-        moon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
-        bell: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
-        whatsapp: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>,
-        plus: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
-        money: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
-        location: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>,
-        calendarPlus: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/></svg>,
-        xCircle: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>,
-        search: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
-        edit: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
-        trash: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>,
-        refresh: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>,
-        download: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
-        upload: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
-        warning: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
-        lightbulb: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18h6"/><path d="M10 22h4"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14z"/></svg>,
-        eye: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
-        eyeOff: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
-        close: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
-        fileText: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      };
-
-      const closeButtonStyle = { 
-        border: 'none', 
-        backgroundColor: isDarkMode ? '#333' : '#e5e5ea', 
-        color: theme.textPrimary, 
-        width: '32px', 
-        height: '32px', 
-        borderRadius: '50%', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        cursor: 'pointer' 
-      };
-
-      const formatAmount = (num) => showAmount ? `$${Number(num).toFixed(0)}` : '****';
 
       const renderWeek = () => {
         const extendedDays = getExtendedWeeksDays();
