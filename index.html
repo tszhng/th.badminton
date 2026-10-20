@@ -4,9 +4,10 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>TH.badminton</title>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- 修復1：加入 crossorigin="anonymous" 確保精確報錯，不再只顯示 Script error -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin="anonymous"></script>
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icon_1.png">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -53,8 +54,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.7.3";
-      const LAST_UPDATED = "2026-10-17 01:00";
+      const APP_VERSION = "v4.7.5";
+      const LAST_UPDATED = "2026-10-20 10:15";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -159,7 +160,8 @@
           const containerRect = containerEl.getBoundingClientRect();
           const tabRect = currentTabEl.getBoundingClientRect();
           
-          const capsuleWidth = Math.min(tabRect.width - 8, 64);
+          // 修復4：防止寬度在隱藏時變成負數
+          const capsuleWidth = Math.max(0, Math.min(tabRect.width - 8, 64));
           const capsuleLeft = (tabRect.left - containerRect.left) + (tabRect.width - capsuleWidth) / 2;
 
           setCapsuleStyle({
@@ -276,15 +278,40 @@
         }
       }, [activeTab]);
 
+      // 定時同步檢測真實今天日期 (自動跨日更新)
       useEffect(() => {
         const interval = setInterval(() => {
           const currentRealToday = getRealTodayString();
           if (currentRealToday !== todayStr) {
             setTodayStr(currentRealToday);
           }
-        }, 60000);
+        }, 30000);
         return () => clearInterval(interval);
       }, [todayStr]);
+
+      // 精準基於 baseStr 計算未來日期
+      const getDateOffsetFromBase = (baseStr, offsetDays) => {
+        const [y, m, d] = baseStr.split('-').map(Number);
+        const dt = new Date(y, m - 1, d + offsetDays);
+        const ny = dt.getFullYear();
+        const nm = String(dt.getMonth() + 1).padStart(2, '0');
+        const nd = String(dt.getDate()).padStart(2, '0');
+        return `${ny}-${nm}-${nd}`;
+      };
+
+      const tomorrowStr = getDateOffsetFromBase(todayStr, 1);
+      const day7Str = getDateOffsetFromBase(todayStr, 6);
+
+      const getNext7DaysRangeFromBase = (baseStr) => {
+        const range = [];
+        for (let i = 0; i < 7; i++) {
+          range.push(getDateOffsetFromBase(baseStr, i));
+        }
+        return range;
+      };
+
+      const next7DaysList = getNext7DaysRangeFromBase(todayStr);
+      const seventhDayStr = day7Str;
 
       const [courtPayers, setCourtPayers] = useState(() => {
         const saved = localStorage.getItem('th_badminton_courtPayers');
@@ -407,8 +434,7 @@
         const realToday = getRealTodayString();
         return schedule.filter(lesson => 
           lesson.date <= realToday && 
-          lesson.enrolledStudents && 
-          lesson.enrolledStudents.some(s => s.name === studentName)
+          (lesson.enrolledStudents || []).some(s => s.name === studentName)
         ).length;
       };
 
@@ -454,9 +480,8 @@
       const calculateTotalFee = (item, customStudentCount = null) => {
         const coach = Number(item.coachFee) || 0;
         const court = Number(item.courtFee) || 0;
-        const count = customStudentCount !== null 
-          ? customStudentCount 
-          : (item.enrolledStudents ? item.enrolledStudents.length : 0);
+        const studentsList = item.enrolledStudents || [];
+        const count = customStudentCount !== null ? customStudentCount : studentsList.length;
 
         if (item.feeMode === 'per_person') {
           return (coach * count) + court;
@@ -466,17 +491,18 @@
       };
 
       const getLessonReceivedIncome = (item) => {
-        if (!item.enrolledStudents || item.enrolledStudents.length === 0) return 0;
+        const studentsList = item.enrolledStudents || [];
+        if (studentsList.length === 0) return 0;
         const coach = Number(item.coachFee) || 0;
         const court = Number(item.courtFee) || 0;
-        const totalCount = item.enrolledStudents.length;
+        const totalCount = studentsList.length;
 
         if (item.feeMode === 'per_person') {
-          return item.enrolledStudents.reduce((acc, st) => {
+          return studentsList.reduce((acc, st) => {
             return acc + (st.isPaid ? (coach + (court / totalCount)) : 0);
           }, 0);
         } else {
-          const paidCount = item.enrolledStudents.filter(st => st.isPaid).length;
+          const paidCount = studentsList.filter(st => st.isPaid).length;
           return (paidCount / totalCount) * (coach + court);
         }
       };
@@ -491,45 +517,20 @@
         window.open(`https://wa.me/${cleanPhone}`, '_blank');
       };
 
-      const getDateOffsetStr = (offsetDays) => {
-        const d = new Date();
-        d.setDate(d.getDate() + offsetDays);
-        return d.toISOString().split('T')[0];
-      };
-
-      const tomorrowStr = getDateOffsetStr(1);
-      const day7Str = getDateOffsetStr(7);
-
-      const getNext7DaysRange = () => {
-        const range = [];
-        const baseDate = new Date();
-        for (let i = 0; i < 7; i++) {
-          const d = new Date(baseDate);
-          d.setDate(d.getDate() + i);
-          range.push(d.toISOString().split('T')[0]);
-        }
-        return range;
-      };
-
-      const next7DaysList = getNext7DaysRange();
-      const seventhDayStr = next7DaysList[6];
-
       const getExtendedWeeksDays = () => {
         const days = [];
-        const base = new Date();
-        base.setDate(base.getDate() - 30);
+        const [y, m, d] = todayStr.split('-').map(Number);
         for (let i = 0; i < 75; i++) {
-          const d = new Date(base);
-          d.setDate(base.getDate() + i);
-          const y = d.getFullYear();
-          const m = String(d.getMonth() + 1).padStart(2, '0');
-          const dayNum = String(d.getDate()).padStart(2, '0');
-          const formatted = `${y}-${m}-${dayNum}`;
+          const cur = new Date(y, m - 1, (d - 30) + i);
+          const cy = cur.getFullYear();
+          const cm = String(cur.getMonth() + 1).padStart(2, '0');
+          const dayNum = String(cur.getDate()).padStart(2, '0');
+          const formatted = `${cy}-${cm}-${dayNum}`;
           const weekNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
           days.push({
             dateStr: formatted,
             dayNum: Number(dayNum),
-            weekName: weekNames[d.getDay()]
+            weekName: weekNames[cur.getDay()]
           });
         }
         return days;
@@ -567,11 +568,10 @@
         .filter(item => item.date === selectedDate)
         .sort((a, b) => timeToMinutes(a.startTime || a.time) - timeToMinutes(b.startTime || b.time));
 
-      const realTodayStr = getRealTodayString();
+      const realTodayStr = todayStr;
       const tomorrowLessons = schedule.filter(item => item.date === tomorrowStr);
       const day7Lessons = schedule.filter(item => item.date === day7Str);
 
-      // 月度收支計算
       const monthlySchedule = schedule
         .filter(item => item.date.startsWith(selectedMonth))
         .sort((a, b) => new Date(a.date) - new Date(b.date) || timeToMinutes(a.startTime) - timeToMinutes(b.startTime));
@@ -586,13 +586,14 @@
         estimatedIncome += totalFee;
         totalExpense += (Number(item.courtFee) || 0);
 
-        if (item.date <= realTodayStr && item.enrolledStudents && item.enrolledStudents.length > 0) {
+        const studentsList = item.enrolledStudents || [];
+        if (item.date <= realTodayStr && studentsList.length > 0) {
           const coach = Number(item.coachFee) || 0;
           const court = Number(item.courtFee) || 0;
-          const totalCount = item.enrolledStudents.length;
+          const totalCount = studentsList.length;
           
           if (item.feeMode === 'per_person') {
-            item.enrolledStudents.forEach(st => {
+            studentsList.forEach(st => {
               if (st.isPaid) {
                 const perPersonCourt = totalCount > 0 ? court / totalCount : 0;
                 const amt = coach + perPersonCourt;
@@ -602,11 +603,11 @@
               }
             });
           } else {
-            const paidCount = item.enrolledStudents.filter(st => st.isPaid).length;
+            const paidCount = studentsList.filter(st => st.isPaid).length;
             if (paidCount > 0) {
               const portion = (paidCount / totalCount) * totalFee;
               totalIncome += portion;
-              item.enrolledStudents.forEach(st => {
+              studentsList.forEach(st => {
                 if (st.isPaid) {
                   const method = st.payMethod || 'FPS';
                   paymentMethodStats[method] = (paymentMethodStats[method] || 0) + (totalFee / totalCount);
@@ -619,7 +620,6 @@
 
       const netProfit = totalIncome - totalExpense;
 
-      // 年度收支統計
       const yearlySchedule = schedule.filter(item => item.date.startsWith(selectedYear));
       let yearlyExpectedIncome = 0;
       let yearlyTotalIncome = 0;
@@ -635,7 +635,7 @@
         mLessons.forEach(item => {
           mExp += calculateTotalFee(item);
           mCost += (Number(item.courtFee) || 0);
-          if (item.date <= realTodayStr && item.enrolledStudents) {
+          if (item.date <= realTodayStr && (item.enrolledStudents || []).length > 0) {
             mInc += getLessonReceivedIncome(item);
           }
         });
@@ -677,17 +677,15 @@
         return a.payerName.localeCompare(b.payerName, 'zh-HK');
       });
 
-      // 複製 WhatsApp 財務摘要
       const handleCopyWhatsAppSummary = () => {
         const unpaidDetails = [];
         monthlySchedule.forEach(lesson => {
-          if (lesson.enrolledStudents) {
-            lesson.enrolledStudents.forEach(st => {
-              if (!st.isPaid) {
-                unpaidDetails.push(`• ${lesson.date.substring(5)} ${st.name} (${lesson.courseName})`);
-              }
-            });
-          }
+          const studentsList = lesson.enrolledStudents || [];
+          studentsList.forEach(st => {
+            if (!st.isPaid) {
+              unpaidDetails.push(`• ${lesson.date.substring(5)} ${st.name} (${lesson.courseName})`);
+            }
+          });
         });
 
         const lines = [
@@ -715,7 +713,6 @@
         });
       };
 
-      // 匯出 CSV 財務報表
       const handleExportCSVReport = () => {
         if (monthlySchedule.length === 0) {
           alert('本月份沒有課堂紀錄可匯出！');
@@ -826,10 +823,12 @@
         }
 
         if (!targetName) { alert('請選擇或輸入學員姓名！'); return; }
-        if (selectedLessonModal.enrolledStudents.some(s => s.name === targetName)) { alert('該學員已在名單中！'); return; }
-        if (selectedLessonModal.enrolledStudents.length >= selectedLessonModal.maxCapacity) { alert('該課節人數已滿！'); return; }
+        
+        const currentStudents = selectedLessonModal.enrolledStudents || [];
+        if (currentStudents.some(s => s.name === targetName)) { alert('該學員已在名單中！'); return; }
+        if (currentStudents.length >= selectedLessonModal.maxCapacity) { alert('該課節人數已滿！'); return; }
 
-        const updatedStudents = [...selectedLessonModal.enrolledStudents, { name: targetName, isPaid: false, payMethod: 'FPS' }];
+        const updatedStudents = [...currentStudents, { name: targetName, isPaid: false, payMethod: 'FPS' }];
         const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
 
         setSchedule(schedule.map(s => s.id === updatedLesson.id ? updatedLesson : s));
@@ -840,7 +839,8 @@
 
       const handleRemoveStudentFromLesson = (studentName) => {
         if (!selectedLessonModal) return;
-        const updatedStudents = selectedLessonModal.enrolledStudents.filter(s => s.name !== studentName);
+        const currentStudents = selectedLessonModal.enrolledStudents || [];
+        const updatedStudents = currentStudents.filter(s => s.name !== studentName);
         const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
         setSchedule(schedule.map(s => s.id === updatedLesson.id ? updatedLesson : s));
         setSelectedLessonModal(updatedLesson);
@@ -848,7 +848,8 @@
 
       const handleTogglePaidStatus = (studentName) => {
         if (!selectedLessonModal) return;
-        const updatedStudents = selectedLessonModal.enrolledStudents.map(s => 
+        const currentStudents = selectedLessonModal.enrolledStudents || [];
+        const updatedStudents = currentStudents.map(s => 
           s.name === studentName ? { ...s, isPaid: !s.isPaid } : s
         );
         const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
@@ -858,7 +859,8 @@
 
       const handleUpdatePayMethod = (studentName, payMethod) => {
         if (!selectedLessonModal) return;
-        const updatedStudents = selectedLessonModal.enrolledStudents.map(s => 
+        const currentStudents = selectedLessonModal.enrolledStudents || [];
+        const updatedStudents = currentStudents.map(s => 
           s.name === studentName ? { ...s, payMethod } : s
         );
         const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
@@ -876,9 +878,8 @@
       };
 
       const handleOpenRenewModal = (item) => {
-        const currentDate = new Date(item.date);
-        currentDate.setDate(currentDate.getDate() + 7);
-        const nextDateStr = currentDate.toISOString().split('T')[0];
+        // 修復3：使用本地推算法防止 toISOString 跨時區誤差導致少一天
+        const nextDateStr = getDateOffsetFromBase(item.date, 7);
 
         setRenewForm({
           originalLesson: item,
@@ -897,8 +898,9 @@
         const item = renewForm.originalLesson;
         if (!item) return;
 
+        const currentStudents = item.enrolledStudents || [];
         const updatedStudents = renewForm.keepStudents 
-          ? item.enrolledStudents.map(s => ({ ...s, isPaid: false }))
+          ? currentStudents.map(s => ({ ...s, isPaid: false }))
           : [];
 
         const newLesson = {
@@ -926,12 +928,13 @@
         const startDT = `${dateStr}T${startT}`;
         const endDT = `${dateStr}T${endT}`;
 
-        const studentListStr = item.enrolledStudents.map(s => s.name).join(', ') || '尚無學員';
+        const studentsList = item.enrolledStudents || [];
+        const studentListStr = studentsList.map(s => s.name).join(', ') || '尚無學員';
         const totalFee = calculateTotalFee(item);
 
         const icsContent = [
           'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TH.badminton App//EN', 'BEGIN:VEVENT',
-          `SUMMARY:🏸 ${item.courseName} (${item.enrolledStudents.length}/${item.maxCapacity}人)`,
+          `SUMMARY:🏸 ${item.courseName} (${studentsList.length}/${item.maxCapacity}人)`,
           `DESCRIPTION:學員：${studentListStr}\\n計費模式：${item.feeMode === 'per_person' ? '每人學費' : '整堂學費'}\\n課堂費：HK$${item.coachFee}\\n場地費：HK$${item.courtFee}\\n預計總學費：HK$${totalFee}`,
           `LOCATION:${item.court || '體育館'}`, `DTSTART:${startDT}`, `DTEND:${endDT}`, 'END:VEVENT', 'END:VCALENDAR'
         ].join('\r\n');
@@ -1036,7 +1039,7 @@
         calendar: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
         revenue: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>,
         user: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>,
-        settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
+        settings: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06-.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>,
         sun: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
         moon: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
         bell: <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>,
@@ -1274,6 +1277,9 @@
               daySchedule.map(item => {
                 const totalFee = calculateTotalFee(item);
                 const overlapped = isLessonOverlapped(item, daySchedule);
+                
+                // 修復2：所有存取 enrolledStudents 的地方都加上 || [] 避免舊資料 Crash
+                const studentsList = item.enrolledStudents || [];
 
                 return (
                   <div 
@@ -1311,7 +1317,7 @@
                     </div>
 
                     <div style={{ fontSize: '13px', color: theme.textPrimary, marginTop: '10px', paddingTop: '8px', borderTop: `1px solid ${theme.border}` }}>
-                      <strong>學員：</strong> {item.enrolledStudents.length > 0 ? item.enrolledStudents.map(s => (
+                      <strong>學員：</strong> {studentsList.length > 0 ? studentsList.map(s => (
                         <span key={s.name} style={{ marginRight: '10px', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
                           <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: s.isPaid ? '#34c759' : '#ff3b30', display: 'inline-block' }}></span>
                           {s.name}
@@ -1422,23 +1428,26 @@
                       {tomorrowLessons.length === 0 ? (
                         <div style={{ color: theme.textMuted, fontSize: '12px', paddingLeft: '4px' }}>明天沒有排課</div>
                       ) : (
-                        tomorrowLessons.map(item => (
-                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', padding: '6px 8px', backgroundColor: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
-                              {icons.shuttlecock} {item.courseName} ({item.startTime})
-                            </span>
-                            <button 
-                              onClick={() => {
-                                if (item.enrolledStudents.length === 0) { alert('該課堂尚未有學員'); return; }
-                                const firstSt = item.enrolledStudents[0];
-                                const match = students.find(s => s.name === firstSt.name);
-                                openWhatsApp(match ? match.phone : '');
-                              }}
-                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-                              {icons.whatsapp} WhatsApp
-                            </button>
-                          </div>
-                        ))
+                        tomorrowLessons.map(item => {
+                          const studentsList = item.enrolledStudents || [];
+                          return (
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', padding: '6px 8px', backgroundColor: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
+                                {icons.shuttlecock} {item.courseName} ({item.startTime})
+                              </span>
+                              <button 
+                                onClick={() => {
+                                  if (studentsList.length === 0) { alert('該課堂尚未有學員'); return; }
+                                  const firstSt = studentsList[0];
+                                  const match = students.find(s => s.name === firstSt.name);
+                                  openWhatsApp(match ? match.phone : '');
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                                {icons.whatsapp} WhatsApp
+                              </button>
+                            </div>
+                          );
+                        })
                       )}
                     </div>
 
@@ -1449,23 +1458,26 @@
                       {day7Lessons.length === 0 ? (
                         <div style={{ color: theme.textMuted, fontSize: '12px', paddingLeft: '4px' }}>7天後 ({day7Str}) 無安排課堂</div>
                       ) : (
-                        day7Lessons.map(item => (
-                          <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', padding: '6px 8px', backgroundColor: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
-                              {icons.shuttlecock} {item.courseName} ({item.startTime})
-                            </span>
-                            <button 
-                              onClick={() => {
-                                if (item.enrolledStudents.length === 0) { alert('該課堂尚未有學員'); return; }
-                                const firstSt = item.enrolledStudents[0];
-                                const match = students.find(s => s.name === firstSt.name);
-                                openWhatsApp(match ? match.phone : '');
-                              }}
-                              style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
-                              {icons.whatsapp} WhatsApp
-                            </button>
-                          </div>
-                        ))
+                        day7Lessons.map(item => {
+                          const studentsList = item.enrolledStudents || [];
+                          return (
+                            <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px', padding: '6px 8px', backgroundColor: theme.cardBg, borderRadius: '8px', border: `1px solid ${theme.border}` }}>
+                              <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
+                                {icons.shuttlecock} {item.courseName} ({item.startTime})
+                              </span>
+                              <button 
+                                onClick={() => {
+                                  if (studentsList.length === 0) { alert('該課堂尚未有學員'); return; }
+                                  const firstSt = studentsList[0];
+                                  const match = students.find(s => s.name === firstSt.name);
+                                  openWhatsApp(match ? match.phone : '');
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', gap: '3px', padding: '4px 8px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '11px', fontWeight: 'bold', cursor: 'pointer' }}>
+                                {icons.whatsapp} WhatsApp
+                              </button>
+                            </div>
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -1801,6 +1813,7 @@
                               <tbody>
                                 {filteredLessons.map(item => {
                                   const totalFee = calculateTotalFee(item);
+                                  const studentsList = item.enrolledStudents || [];
 
                                   return (
                                     <tr 
@@ -1838,9 +1851,9 @@
 
                                       {/* 3. 學員加收款狀態 */}
                                       <td style={{ padding: '10px 6px', verticalAlign: 'middle' }}>
-                                        {item.enrolledStudents && item.enrolledStudents.length > 0 ? (
+                                        {studentsList.length > 0 ? (
                                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                                            {item.enrolledStudents.map((st, sIdx) => (
+                                            {studentsList.map((st, sIdx) => (
                                               <span 
                                                 key={sIdx} 
                                                 style={{ 
@@ -2573,15 +2586,15 @@
                 <div style={{ backgroundColor: theme.inputBg, padding: '14px', borderRadius: '18px', marginBottom: '14px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                     <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.textPrimary }}>
-                      學員名單 ({selectedLessonModal.enrolledStudents.length} / {selectedLessonModal.maxCapacity}人)
+                      學員名單 ({(selectedLessonModal.enrolledStudents || []).length} / {selectedLessonModal.maxCapacity}人)
                     </h4>
                     <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 雙擊學員列查看詳情</span>
                   </div>
                   
-                  {selectedLessonModal.enrolledStudents.length === 0 ? (
+                  {(selectedLessonModal.enrolledStudents || []).length === 0 ? (
                     <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '8px' }}>尚無學員報名</div>
                   ) : (
-                    selectedLessonModal.enrolledStudents.map((st, idx) => (
+                    (selectedLessonModal.enrolledStudents || []).map((st, idx) => (
                       <div 
                         key={idx} 
                         onDoubleClick={() => handleOpenStudentModalByName(st.name)}
@@ -2632,7 +2645,7 @@
                     ))
                   )}
 
-                  {selectedLessonModal.enrolledStudents.length < selectedLessonModal.maxCapacity ? (
+                  {(selectedLessonModal.enrolledStudents || []).length < selectedLessonModal.maxCapacity ? (
                     <div style={{ marginTop: '12px', borderTop: `1px dashed ${theme.border}`, paddingTop: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '6px', color: theme.textPrimary }}>加入學員至此班課：</div>
                       <select 
