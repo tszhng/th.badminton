@@ -182,8 +182,8 @@
     }
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.9.3";
-      const LAST_UPDATED = "2026-10-27 17:00";
+      const APP_VERSION = "v4.9.5";
+      const LAST_UPDATED = "2026-10-27 18:00";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -232,6 +232,10 @@
       const [revenueMonth, setRevenueMonth] = useState(getMonthString(todayStr));
 
       const [calendarViewMode, setCalendarViewMode] = useState('month');
+      
+      // 控制課表頁面是否顯示金額
+      const [showScheduleAmount, setShowScheduleAmount] = useState(false);
+      
       const [showAmount, setShowAmount] = useState(false);
       const [activeTab, setActiveTab] = useState('schedule');
       const [expandedPayers, setExpandedPayers] = useState({});
@@ -1209,8 +1213,8 @@
 
       const inputStyle = { 
         width: '100%', 
-        minWidth: 0, // 解決 iOS 原生寬度撐破容器問題
-        WebkitAppearance: 'none', // 移除 iOS 原生外觀干擾
+        minWidth: 0, 
+        WebkitAppearance: 'none', 
         appearance: 'none',
         padding: '10px 12px', 
         borderRadius: '10px', 
@@ -1416,9 +1420,26 @@
               <span style={{ fontSize: '15px', fontWeight: '700', color: theme.textPrimary, letterSpacing: '-0.3px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {icons.calendar} {formattedTitle}
               </span>
-              <span style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {icons.lightbulb} 點擊卡片加學員 / 管理
-              </span>
+              
+              {/* 🔧 修改：將提示文字與眼睛按鈕放在一起 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {icons.lightbulb} 點擊卡片加學員 / 管理
+                </span>
+                <button
+                  onClick={() => setShowScheduleAmount(!showScheduleAmount)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    width: '24px', height: '24px', borderRadius: '8px',
+                    backgroundColor: showScheduleAmount ? theme.inputBg : '#0071e3',
+                    color: showScheduleAmount ? theme.textPrimary : '#fff',
+                    border: 'none', cursor: 'pointer', padding: 0,
+                    boxShadow: showScheduleAmount ? 'none' : '0 2px 8px rgba(0,113,227,0.2)'
+                  }}
+                  title={showScheduleAmount ? '隱藏金額' : '顯示金額'}>
+                  {showScheduleAmount ? icons.eyeOff : icons.eye}
+                </button>
+              </div>
             </div>
 
             {daySchedule.length === 0 ? (
@@ -1453,7 +1474,7 @@
                           </span>
                         )}
                         <span style={{ fontSize: '13px', fontWeight: '700', color: isDarkMode ? '#30d158' : '#34c759' }}>
-                          HK$ {totalFee}
+                          {showScheduleAmount ? `HK$ ${totalFee}` : 'HK$ ****'}
                         </span>
                       </div>
                     </div>
@@ -2655,7 +2676,6 @@
                     }} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
-                  {/* 🔧 開始時間與結束時間改為左右並排 */}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
@@ -2763,7 +2783,6 @@
                     <input type="date" value={lessonForm.date} onChange={e => setLessonForm({ ...lessonForm, date: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
-                  {/* 🔧 開始時間與結束時間改為左右並排 */}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
@@ -2969,7 +2988,6 @@
                     />
                   </div>
 
-                  {/* 🔧 續堂的開始時間與結束時間也改為左右並排 */}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>開始時間</label>
