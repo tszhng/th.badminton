@@ -18,7 +18,6 @@
   <link rel="apple-touch-icon" href="icon_1.png">
   <link rel="icon" type="image/png" href="icon_1.png">
 
-  <!-- 版本已鎖定；Service Worker 會快取這三個 CDN 檔案，之後可離線 -->
   <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
   <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" crossorigin="anonymous"></script>
@@ -183,8 +182,8 @@
     }
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.9.0";
-      const LAST_UPDATED = "2026-10-27 12:00";
+      const APP_VERSION = "v4.9.2";
+      const LAST_UPDATED = "2026-10-27 16:30";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -229,7 +228,6 @@
       const [todayStr, setTodayStr] = useState(getRealTodayString());
       const [selectedDate, setSelectedDate] = useState(todayStr);
 
-      // 第 8 點：課表與收支分開的月份 state
       const [scheduleMonth, setScheduleMonth] = useState(getMonthString(todayStr));
       const [revenueMonth, setRevenueMonth] = useState(getMonthString(todayStr));
 
@@ -516,7 +514,6 @@
         court: ''
       });
 
-      /* ---------- 第 12 點：Modal 開啟時鎖住背景滾動 ---------- */
       const anyModalOpen = showAddModal || showEditModal || !!selectedLessonModal ||
         showRenewModal || showAddStudentModal || showEditStudentModal;
 
@@ -525,7 +522,6 @@
         return () => { document.body.style.overflow = ''; };
       }, [anyModalOpen]);
 
-      /* ---------- 第 12 點：Esc 關閉最上層 Modal ---------- */
       useEffect(() => {
         const onKey = (e) => {
           if (e.key !== 'Escape') return;
@@ -563,7 +559,6 @@
         }
       };
 
-      // 第 1 點：修正時間重疊判斷
       const isLessonOverlapped = (currentLesson, dayLessons) => {
         const startA = timeToMinutes(currentLesson.startTime || currentLesson.time);
         const endA = timeToMinutes(currentLesson.endTime) || (startA + 60);
@@ -621,7 +616,6 @@
         window.open(`https://wa.me/${cleanPhone}`, '_blank');
       };
 
-      // 第 6 點：周曆資料用 useMemo
       const extendedDays = useMemo(() => {
         const days = [];
         const [y, m, d] = todayStr.split('-').map(Number);
@@ -675,7 +669,6 @@
       const tomorrowLessons = useMemo(() => schedule.filter(item => item.date === tomorrowStr), [schedule, tomorrowStr]);
       const day7Lessons = useMemo(() => schedule.filter(item => item.date === day7Str), [schedule, day7Str]);
 
-      /* ---------- 第 6 點：月度統計 useMemo ---------- */
       const monthlyStats = useMemo(() => {
         const list = schedule
           .filter(item => (item.date || '').startsWith(revenueMonth))
@@ -742,7 +735,6 @@
         netProfit
       } = monthlyStats;
 
-      /* ---------- 第 6 點：年度統計只在年檢視時才計算 ---------- */
       const yearlyStats = useMemo(() => {
         if (revenueViewMode !== 'year') return null;
         const list = schedule.filter(item => (item.date || '').startsWith(selectedYear));
@@ -787,7 +779,6 @@
       const monthlyBreakdown = yearlyStats ? yearlyStats.breakdown : [];
       const yearlyNetProfit = yearlyStats ? yearlyStats.net : 0;
 
-      /* ---------- 第 6 點：支出分組 useMemo ---------- */
       const sortedPayerGroups = useMemo(() => {
         const acc = {};
         monthlySchedule
@@ -848,7 +839,6 @@
           return;
         }
 
-        // 第 14 點：防 CSV 公式注入 + 自動加引號
         const csvCell = (val) => {
           let s = String(val === null || val === undefined ? '' : val);
           if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
@@ -900,7 +890,6 @@
       const handleSaveLesson = (e) => {
         e.preventDefault();
 
-        // 第 2 點：禁止跨午夜（結束時間必須晚於開始時間）
         if (timeToMinutes(lessonForm.endTime) <= timeToMinutes(lessonForm.startTime)) {
           alert('結束時間必須晚於開始時間（暫不支援跨午夜課程）');
           return;
@@ -1029,7 +1018,6 @@
       const handleConfirmRenewLesson = (e) => {
         e.preventDefault();
 
-        // 第 2 點：續堂也禁止跨午夜
         if (timeToMinutes(renewForm.endTime) <= timeToMinutes(renewForm.startTime)) {
           alert('結束時間必須晚於開始時間（暫不支援跨午夜課程）');
           return;
@@ -1061,7 +1049,6 @@
       };
 
       const addToAppleCalendar = (item) => {
-        // 第 14 點：ICS 加上時區、轉義、撤銷 blob URL
         const dateStr = (item.date || '').replace(/-/g, '');
         const startT = (item.startTime || item.time || '00:00').replace(':', '') + '00';
         const endT = (item.endTime || item.startTime || item.time || '00:00').replace(':', '') + '00';
@@ -1110,7 +1097,6 @@
         if (!studentForm.name) return;
 
         if (studentForm.id) {
-          // 第 7 點：改名時同步更新 schedule 內的學員姓名
           const oldStudent = students.find(s => s.id === studentForm.id);
           const oldName = oldStudent ? oldStudent.name : null;
 
@@ -1201,7 +1187,6 @@
         reader.readAsText(file);
       };
 
-      // 第 2 點：智慧時間連動，超出一天就不自動調整
       const handleStartTimeChange = (newStart) => {
         const oldStartMins = timeToMinutes(lessonForm.startTime);
         const oldEndMins = timeToMinutes(lessonForm.endTime);
@@ -1211,7 +1196,6 @@
         const newEndMins = newStartMins + duration;
 
         if (newEndMins >= 24 * 60) {
-          // 會跨午夜，只更新開始時間，讓使用者手動調整結束時間
           setLessonForm(prev => ({ ...prev, startTime: newStart }));
           return;
         }
@@ -1223,7 +1207,21 @@
         }));
       };
 
-      const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, boxSizing: 'border-box', fontSize: '14px', outline: 'none' };
+      const inputStyle = { 
+        width: '100%', 
+        minWidth: 0, // 解決 iOS 原生寬度撐破容器問題
+        WebkitAppearance: 'none', // 移除 iOS 原生外觀干擾
+        appearance: 'none',
+        padding: '10px 12px', 
+        borderRadius: '10px', 
+        border: `1px solid ${theme.inputBorder}`, 
+        backgroundColor: theme.inputBg, 
+        color: theme.inputText, 
+        boxSizing: 'border-box', 
+        fontSize: '14px', 
+        outline: 'none' 
+      };
+      
       const cardStyle = { backgroundColor: theme.cardBg, color: theme.textPrimary, padding: '16px', borderRadius: '24px', marginBottom: '16px', boxSizing: 'border-box', width: '100%', boxShadow: theme.shadow, border: `1px solid ${theme.border}` };
       const weekLabels = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
 
@@ -2207,7 +2205,7 @@
                         setStudentForm({ id: null, name: '', phone: '', level: '新手', notes: '' });
                         setShowAddStudentModal(true);
                       }}
-                      style={{ width: '100%', padding: '14px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '16px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '14px', boxShadow: '0 4px 16px rgba(0, 113, 227, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      style={{ width: '100%', padding: '14px', backgroundColor: '#34c759', color: '#fff', border: 'none', borderRadius: '16px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '14px', boxShadow: '0 4px 16px rgba(52, 199, 89, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                       {icons.plus} 新增學員
                     </button>
 
