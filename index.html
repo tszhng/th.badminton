@@ -182,8 +182,8 @@
     }
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.9.2";
-      const LAST_UPDATED = "2026-10-27 16:30";
+      const APP_VERSION = "v4.9.3";
+      const LAST_UPDATED = "2026-10-27 17:00";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -2655,14 +2655,16 @@
                     }} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                    <input type="time" value={lessonForm.startTime} onChange={e => handleStartTimeChange(e.target.value)} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                    <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({ ...lessonForm, endTime: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                  {/* 🔧 開始時間與結束時間改為左右並排 */}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
+                      <input type="time" value={lessonForm.startTime} onChange={e => handleStartTimeChange(e.target.value)} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({ ...lessonForm, endTime: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                    </div>
                   </div>
 
                   <div>
@@ -2761,14 +2763,16 @@
                     <input type="date" value={lessonForm.date} onChange={e => setLessonForm({ ...lessonForm, date: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                    <input type="time" value={lessonForm.startTime} onChange={e => handleStartTimeChange(e.target.value)} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                    <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({ ...lessonForm, endTime: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                  {/* 🔧 開始時間與結束時間改為左右並排 */}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
+                      <input type="time" value={lessonForm.startTime} onChange={e => handleStartTimeChange(e.target.value)} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({ ...lessonForm, endTime: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                    </div>
                   </div>
 
                   <div>
@@ -2965,26 +2969,28 @@
                     />
                   </div>
 
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>開始時間</label>
-                    <input
-                      type="time"
-                      value={renewForm.startTime}
-                      onChange={e => setRenewForm({ ...renewForm, startTime: e.target.value })}
-                      required
-                      style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }}
-                    />
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>結束時間</label>
-                    <input
-                      type="time"
-                      value={renewForm.endTime}
-                      onChange={e => setRenewForm({ ...renewForm, endTime: e.target.value })}
-                      required
-                      style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }}
-                    />
+                  {/* 🔧 續堂的開始時間與結束時間也改為左右並排 */}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>開始時間</label>
+                      <input
+                        type="time"
+                        value={renewForm.startTime}
+                        onChange={e => setRenewForm({ ...renewForm, startTime: e.target.value })}
+                        required
+                        style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>結束時間</label>
+                      <input
+                        type="time"
+                        value={renewForm.endTime}
+                        onChange={e => setRenewForm({ ...renewForm, endTime: e.target.value })}
+                        required
+                        style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }}
+                      />
+                    </div>
                   </div>
 
                   <div>
