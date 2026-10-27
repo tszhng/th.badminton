@@ -4,13 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>TH.badminton</title>
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js" crossorigin="anonymous"></script>
-  <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="icon_1.png">
+
+  <!-- PWA / iOS meta -->
+  <meta name="theme-color" content="#f5f5f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#121212" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TH.badminton">
+  <meta name="description" content="羽毛球教練課表與收支管理">
+
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon_1.png">
+  <link rel="icon" type="image/png" href="icon_1.png">
+
+  <!-- 版本已鎖定；Service Worker 會快取這三個 CDN 檔案，之後可離線 -->
+  <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" crossorigin="anonymous"></script>
+
   <style>
     @keyframes fadeInUp {
       from { opacity: 0; transform: translateY(10px); }
@@ -31,39 +43,169 @@
       from { opacity: 0.2; transform: translateX(-24px); }
       to { opacity: 1; transform: translateX(0); }
     }
-    .month-slide-next {
-      animation: slideFromRight 0.28s cubic-bezier(0.25, 1, 0.5, 1) forwards;
-    }
-    .month-slide-prev {
-      animation: slideFromLeft 0.28s cubic-bezier(0.25, 1, 0.5, 1) forwards;
-    }
-    .no-scrollbar::-webkit-scrollbar {
-      display: none;
-    }
-    .no-scrollbar {
-      -ms-overflow-style: none;
-      scrollbar-width: none;
-    }
+    .month-slide-next { animation: slideFromRight 0.28s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+    .month-slide-prev { animation: slideFromLeft 0.28s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+    .no-scrollbar::-webkit-scrollbar { display: none; }
+    .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    html, body { -webkit-tap-highlight-color: transparent; }
   </style>
 </head>
 <body id="app-body" style="margin: 0; background-color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;">
   <div id="root"></div>
 
+  <!-- Service Worker 註冊 -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('./sw.js').catch(function (err) {
+          console.warn('Service Worker 註冊失敗：', err);
+        });
+      });
+    }
+  </script>
+
   <script type="text/babel">
-    const { useState, useEffect, useRef, useLayoutEffect } = React;
+    const { useState, useEffect, useRef, useLayoutEffect, useMemo } = React;
+
+    /* ---------- 純工具函式（元件外，引用穩定） ---------- */
+    const timeToMinutes = (timeStr) => {
+      if (!timeStr) return 0;
+      const [h, m] = String(timeStr).split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    };
+
+    const minutesToTime = (mins) => {
+      const h = Math.floor(mins / 60) % 24;
+      const m = mins % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    const calculateTotalFee = (item, customStudentCount = null) => {
+      const coach = Number(item.coachFee) || 0;
+      const court = Number(item.courtFee) || 0;
+      const studentsList = item.enrolledStudents || [];
+      const count = customStudentCount !== null ? customStudentCount : studentsList.length;
+      if (item.feeMode === 'per_person') {
+        return (coach * count) + court;
+      }
+      return coach + court;
+    };
+
+    const getLessonReceivedIncome = (item) => {
+      const studentsList = item.enrolledStudents || [];
+      if (studentsList.length === 0) return 0;
+      const coach = Number(item.coachFee) || 0;
+      const court = Number(item.courtFee) || 0;
+      const totalCount = studentsList.length;
+
+      if (item.feeMode === 'per_person') {
+        return studentsList.reduce((acc, st) => {
+          return acc + (st.isPaid ? (coach + (court / totalCount)) : 0);
+        }, 0);
+      }
+      const paidCount = studentsList.filter(st => st.isPaid).length;
+      return (paidCount / totalCount) * (coach + court);
+    };
+
+    /* ---------- localStorage 安全存取 ---------- */
+    const loadLS = (key, fallback) => {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (e) {
+        console.warn('localStorage 讀取失敗:', key, e);
+        return fallback;
+      }
+    };
+
+    const saveLS = (key, value) => {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+      } catch (e) {
+        console.warn('localStorage 寫入失敗:', key, e);
+      }
+    };
+
+    /* ---------- Error Boundary ---------- */
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+      componentDidCatch(error, info) {
+        console.error('App Error:', error, info);
+      }
+      handleReload = () => {
+        this.setState({ hasError: false, error: null });
+        window.location.reload();
+      };
+      handleExportRaw = () => {
+        try {
+          const data = {
+            courtPayers: localStorage.getItem('th_badminton_courtPayers'),
+            courseTypes: localStorage.getItem('th_badminton_courseTypes'),
+            students: localStorage.getItem('th_badminton_students'),
+            schedule: localStorage.getItem('th_badminton_schedule'),
+          };
+          const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `th_badminton_raw_backup_${Date.now()}.json`;
+          a.click();
+        } catch (e) {
+          alert('匯出失敗：' + e.message);
+        }
+      };
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div style={{ maxWidth: '420px', margin: '80px auto', padding: '24px', fontFamily: '-apple-system, sans-serif', color: '#1d1d1f' }}>
+              <h2 style={{ marginTop: 0 }}>😵 應用程式發生錯誤</h2>
+              <p style={{ color: '#86868b', fontSize: '14px', wordBreak: 'break-word' }}>
+                {String(this.state.error && this.state.error.message ? this.state.error.message : this.state.error)}
+              </p>
+              <p style={{ fontSize: '13px', color: '#86868b' }}>
+                你的資料仍然存在瀏覽器的 localStorage 中。建議先匯出原始備份，再重新載入。
+              </p>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '16px' }}>
+                <button onClick={this.handleExportRaw} style={{ flex: 1, padding: '12px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>匯出原始備份</button>
+                <button onClick={this.handleReload} style={{ flex: 1, padding: '12px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', cursor: 'pointer' }}>重新載入</button>
+              </div>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.8.6";
-      const LAST_UPDATED = "2026-10-26 18:10";
+      const APP_VERSION = "v4.9.0";
+      const LAST_UPDATED = "2026-10-27 12:00";
+
+      const getRealTodayString = () => {
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+
+      const getMonthString = (dateStr) => (dateStr || '').substring(0, 7);
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
-        const saved = localStorage.getItem('th_badminton_darkMode');
-        if (saved !== null) return JSON.parse(saved);
+        try {
+          const saved = localStorage.getItem('th_badminton_darkMode');
+          if (saved !== null) return JSON.parse(saved);
+        } catch (e) { /* ignore */ }
         return window.matchMedia('(prefers-color-scheme: dark)').matches;
       });
 
       useEffect(() => {
-        localStorage.setItem('th_badminton_darkMode', JSON.stringify(isDarkMode));
+        saveLS('th_badminton_darkMode', isDarkMode);
         document.body.style.backgroundColor = isDarkMode ? '#121212' : '#f5f5f7';
       }, [isDarkMode]);
 
@@ -84,19 +226,12 @@
         accentHover: '#0077ed'
       };
 
-      const getRealTodayString = () => {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
-      };
-
-      const getMonthString = (dateStr) => (dateStr || '').substring(0, 7);
-
       const [todayStr, setTodayStr] = useState(getRealTodayString());
       const [selectedDate, setSelectedDate] = useState(todayStr);
-      const [selectedMonth, setSelectedMonth] = useState(getMonthString(todayStr));
+
+      // 第 8 點：課表與收支分開的月份 state
+      const [scheduleMonth, setScheduleMonth] = useState(getMonthString(todayStr));
+      const [revenueMonth, setRevenueMonth] = useState(getMonthString(todayStr));
 
       const [calendarViewMode, setCalendarViewMode] = useState('month');
       const [showAmount, setShowAmount] = useState(false);
@@ -108,7 +243,7 @@
       const [revenueStatusFilter, setRevenueStatusFilter] = useState('all');
 
       const [activeStudentDetail, setActiveStudentDetail] = useState(null);
-      const [studentSort, setStudentSort] = useState('name'); 
+      const [studentSort, setStudentSort] = useState('name');
 
       const [monthSlideDir, setMonthSlideDir] = useState('');
       const touchStartXRef = useRef(0);
@@ -118,11 +253,7 @@
 
       useEffect(() => {
         const handleScroll = () => {
-          if (window.scrollY > 20) {
-            setScrolled(true);
-          } else {
-            setScrolled(false);
-          }
+          setScrolled(window.scrollY > 20);
         };
         window.addEventListener('scroll', handleScroll, { passive: true });
         return () => window.removeEventListener('scroll', handleScroll);
@@ -134,7 +265,7 @@
           const realToday = getRealTodayString();
           setTodayStr(realToday);
           setSelectedDate(realToday);
-          setSelectedMonth(getMonthString(realToday));
+          setScheduleMonth(getMonthString(realToday));
           setCalendarViewMode('month');
         }
         if (activeTab !== 'students') {
@@ -164,15 +295,9 @@
         if (currentTabEl && containerEl) {
           const containerRect = containerEl.getBoundingClientRect();
           const tabRect = currentTabEl.getBoundingClientRect();
-          
           const capsuleWidth = Math.max(0, Math.min(tabRect.width - 8, 64));
           const capsuleLeft = (tabRect.left - containerRect.left) + (tabRect.width - capsuleWidth) / 2;
-
-          setCapsuleStyle({
-            left: capsuleLeft,
-            width: capsuleWidth,
-            opacity: 1
-          });
+          setCapsuleStyle({ left: capsuleLeft, width: capsuleWidth, opacity: 1 });
         }
       };
 
@@ -196,7 +321,7 @@
 
       const selectDate = (dateStr) => {
         setSelectedDate(dateStr);
-        setSelectedMonth(getMonthString(dateStr));
+        setScheduleMonth(getMonthString(dateStr));
         scrollToDateInWeek(dateStr);
       };
 
@@ -204,7 +329,7 @@
         const realToday = getRealTodayString();
         setTodayStr(realToday);
         setSelectedDate(realToday);
-        setSelectedMonth(getMonthString(realToday));
+        setScheduleMonth(getMonthString(realToday));
         scrollToDateInWeek(realToday);
       };
 
@@ -225,14 +350,14 @@
       }, [calendarViewMode, selectedDate]);
 
       const changeMonthByOffset = (offset) => {
-        const [y, m] = selectedMonth.split('-').map(Number);
+        const [y, m] = scheduleMonth.split('-').map(Number);
         const nextD = new Date(y, m - 1 + offset, 1);
         const ny = nextD.getFullYear();
         const nm = String(nextD.getMonth() + 1).padStart(2, '0');
         const nextMonthStr = `${ny}-${nm}`;
-        
+
         setMonthSlideDir(offset > 0 ? 'month-slide-next' : 'month-slide-prev');
-        setSelectedMonth(nextMonthStr);
+        setScheduleMonth(nextMonthStr);
 
         const realToday = getRealTodayString();
         if (nextMonthStr === getMonthString(realToday)) {
@@ -251,11 +376,8 @@
         const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
         const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
         if (Math.abs(deltaX) > 45 && Math.abs(deltaX) > Math.abs(deltaY)) {
-          if (deltaX < 0) {
-            changeMonthByOffset(1);
-          } else {
-            changeMonthByOffset(-1);
-          }
+          if (deltaX < 0) changeMonthByOffset(1);
+          else changeMonthByOffset(-1);
         }
       };
 
@@ -270,24 +392,17 @@
       }, []);
 
       const togglePayerExpand = (payerName) => {
-        setExpandedPayers(prev => ({
-          ...prev,
-          [payerName]: !prev[payerName]
-        }));
+        setExpandedPayers(prev => ({ ...prev, [payerName]: !prev[payerName] }));
       };
 
       useEffect(() => {
-        if (activeTab !== 'revenue') {
-          setShowAmount(false);
-        }
+        if (activeTab !== 'revenue') setShowAmount(false);
       }, [activeTab]);
 
       useEffect(() => {
         const interval = setInterval(() => {
           const currentRealToday = getRealTodayString();
-          if (currentRealToday !== todayStr) {
-            setTodayStr(currentRealToday);
-          }
+          if (currentRealToday !== todayStr) setTodayStr(currentRealToday);
         }, 30000);
         return () => clearInterval(interval);
       }, [todayStr]);
@@ -301,45 +416,39 @@
         return `${ny}-${nm}-${nd}`;
       };
 
-      const tomorrowStr = getDateOffsetFromBase(todayStr, 1);
-      const day7Str = getDateOffsetFromBase(todayStr, 6);
-
-      const getNext7DaysRangeFromBase = (baseStr) => {
-        const range = [];
-        for (let i = 0; i < 7; i++) {
-          range.push(getDateOffsetFromBase(baseStr, i));
-        }
-        return range;
-      };
-
-      const next7DaysList = getNext7DaysRangeFromBase(todayStr);
+      const tomorrowStr = useMemo(() => getDateOffsetFromBase(todayStr, 1), [todayStr]);
+      const day7Str = useMemo(() => getDateOffsetFromBase(todayStr, 6), [todayStr]);
       const seventhDayStr = day7Str;
 
-      const [courtPayers, setCourtPayers] = useState(() => {
-        const saved = localStorage.getItem('th_badminton_courtPayers');
-        return saved ? JSON.parse(saved) : ['待定', 'TH Coach', 'Yan'];
-      });
+      const next7DaysList = useMemo(() => {
+        const arr = [];
+        for (let i = 0; i < 7; i++) arr.push(getDateOffsetFromBase(todayStr, i));
+        return arr;
+      }, [todayStr]);
+      const next7DaysSet = useMemo(() => new Set(next7DaysList), [next7DaysList]);
+
+      const [courtPayers, setCourtPayers] = useState(() =>
+        loadLS('th_badminton_courtPayers', ['待定', 'TH Coach', 'Yan'])
+      );
       const [newPayerInput, setNewPayerInput] = useState('');
 
-      const [courseTypes, setCourseTypes] = useState(() => {
-        const saved = localStorage.getItem('th_badminton_courseTypes');
-        return saved ? JSON.parse(saved) : [
+      const [courseTypes, setCourseTypes] = useState(() =>
+        loadLS('th_badminton_courseTypes', [
           { id: '1', name: '1人私教', maxCapacity: 1, duration: '1小時', feeMode: 'per_lesson', defaultCoachFee: 500, defaultCourtFee: 150 },
           { id: '2', name: '2-4人小班', maxCapacity: 4, duration: '2小時', feeMode: 'per_person', defaultCoachFee: 200, defaultCourtFee: 200 },
           { id: '3', name: '5-8人中班', maxCapacity: 8, duration: '2小時', feeMode: 'per_person', defaultCoachFee: 150, defaultCourtFee: 240 },
           { id: '4', name: '8人以上大班', maxCapacity: 12, duration: '2小時', feeMode: 'per_person', defaultCoachFee: 120, defaultCourtFee: 300 },
-        ];
-      });
+        ])
+      );
 
       const [editingCourseTypeId, setEditingCourseTypeId] = useState(null);
 
-      const [students, setStudents] = useState(() => {
-        const saved = localStorage.getItem('th_badminton_students');
-        return saved ? JSON.parse(saved) : [
+      const [students, setStudents] = useState(() =>
+        loadLS('th_badminton_students', [
           { id: 1, name: '張小明', phone: '91234567', level: '近初', notes: '習慣右手，想練高遠球' },
           { id: 2, name: '李阿華', phone: '98765432', level: '初中', notes: '主力練雙打平抽' }
-        ];
-      });
+        ])
+      );
 
       const [searchQuery, setSearchQuery] = useState('');
       const [studentForm, setStudentForm] = useState({ id: null, name: '', phone: '', level: '新手', notes: '' });
@@ -347,9 +456,8 @@
       const [showAddStudentModal, setShowAddStudentModal] = useState(false);
       const [showEditStudentModal, setShowEditStudentModal] = useState(false);
 
-      const [schedule, setSchedule] = useState(() => {
-        const saved = localStorage.getItem('th_badminton_schedule');
-        return saved ? JSON.parse(saved) : [
+      const [schedule, setSchedule] = useState(() =>
+        loadLS('th_badminton_schedule', [
           {
             id: 1,
             courseName: '1人私教',
@@ -364,13 +472,13 @@
             court: '中山紀念公園體育館',
             enrolledStudents: [{ name: '張小明', isPaid: false, payMethod: 'FPS' }]
           }
-        ];
-      });
+        ])
+      );
 
-      useEffect(() => { localStorage.setItem('th_badminton_courtPayers', JSON.stringify(courtPayers)); }, [courtPayers]);
-      useEffect(() => { localStorage.setItem('th_badminton_courseTypes', JSON.stringify(courseTypes)); }, [courseTypes]);
-      useEffect(() => { localStorage.setItem('th_badminton_students', JSON.stringify(students)); }, [students]);
-      useEffect(() => { localStorage.setItem('th_badminton_schedule', JSON.stringify(schedule)); }, [schedule]);
+      useEffect(() => { saveLS('th_badminton_courtPayers', courtPayers); }, [courtPayers]);
+      useEffect(() => { saveLS('th_badminton_courseTypes', courseTypes); }, [courseTypes]);
+      useEffect(() => { saveLS('th_badminton_students', students); }, [students]);
+      useEffect(() => { saveLS('th_badminton_schedule', schedule); }, [schedule]);
 
       const [showAddModal, setShowAddModal] = useState(false);
       const [showEditModal, setShowEditModal] = useState(false);
@@ -408,6 +516,30 @@
         court: ''
       });
 
+      /* ---------- 第 12 點：Modal 開啟時鎖住背景滾動 ---------- */
+      const anyModalOpen = showAddModal || showEditModal || !!selectedLessonModal ||
+        showRenewModal || showAddStudentModal || showEditStudentModal;
+
+      useEffect(() => {
+        document.body.style.overflow = anyModalOpen ? 'hidden' : '';
+        return () => { document.body.style.overflow = ''; };
+      }, [anyModalOpen]);
+
+      /* ---------- 第 12 點：Esc 關閉最上層 Modal ---------- */
+      useEffect(() => {
+        const onKey = (e) => {
+          if (e.key !== 'Escape') return;
+          if (showAddStudentModal) setShowAddStudentModal(false);
+          else if (showEditStudentModal) setShowEditStudentModal(false);
+          else if (showRenewModal) setShowRenewModal(false);
+          else if (showEditModal) setShowEditModal(false);
+          else if (selectedLessonModal) setSelectedLessonModal(null);
+          else if (showAddModal) setShowAddModal(false);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [showAddStudentModal, showEditStudentModal, showRenewModal, showEditModal, selectedLessonModal, showAddModal]);
+
       const handleAddCourtPayer = () => {
         const trimmed = newPayerInput.trim();
         if (!trimmed) return;
@@ -431,22 +563,15 @@
         }
       };
 
-      const timeToMinutes = (timeStr) => {
-        if (!timeStr) return 0;
-        const [h, m] = String(timeStr).split(':').map(Number);
-        return (h || 0) * 60 + (m || 0);
-      };
-
+      // 第 1 點：修正時間重疊判斷
       const isLessonOverlapped = (currentLesson, dayLessons) => {
         const startA = timeToMinutes(currentLesson.startTime || currentLesson.time);
         const endA = timeToMinutes(currentLesson.endTime) || (startA + 60);
-
         return dayLessons.some(other => {
           if (other.id === currentLesson.id) return false;
           const startB = timeToMinutes(other.startTime || other.time);
           const endB = timeToMinutes(other.endTime) || (startB + 60);
-
-          return startA < endB && startB < startA;
+          return startA < endB && startB < endA;
         });
       };
 
@@ -460,7 +585,7 @@
           feeMode: defaultType.feeMode || 'per_person',
           coachFee: defaultType.defaultCoachFee,
           courtFee: defaultType.defaultCourtFee,
-          courtPayer: courtPayers[1] || 'TH Coach',
+          courtPayer: courtPayers.find(p => p !== '待定') || '待定',
           customCourtPayer: '',
           date: selectedDate,
           startTime: '19:00',
@@ -468,36 +593,6 @@
           court: ''
         });
         setShowAddModal(true);
-      };
-
-      const calculateTotalFee = (item, customStudentCount = null) => {
-        const coach = Number(item.coachFee) || 0;
-        const court = Number(item.courtFee) || 0;
-        const studentsList = item.enrolledStudents || [];
-        const count = customStudentCount !== null ? customStudentCount : studentsList.length;
-
-        if (item.feeMode === 'per_person') {
-          return (coach * count) + court;
-        } else {
-          return coach + court;
-        }
-      };
-
-      const getLessonReceivedIncome = (item) => {
-        const studentsList = item.enrolledStudents || [];
-        if (studentsList.length === 0) return 0;
-        const coach = Number(item.coachFee) || 0;
-        const court = Number(item.courtFee) || 0;
-        const totalCount = studentsList.length;
-
-        if (item.feeMode === 'per_person') {
-          return studentsList.reduce((acc, st) => {
-            return acc + (st.isPaid ? (coach + (court / totalCount)) : 0);
-          }, 0);
-        } else {
-          const paidCount = studentsList.filter(st => st.isPaid).length;
-          return (paidCount / totalCount) * (coach + court);
-        }
       };
 
       const checkStudentHasUnpaid = (studentName) => {
@@ -510,8 +605,8 @@
       };
 
       const getStudentCompletedLessonCount = (studentName) => {
-        return schedule.filter(lesson => 
-          (lesson.date || '') <= todayStr && 
+        return schedule.filter(lesson =>
+          (lesson.date || '') <= todayStr &&
           (lesson.enrolledStudents || []).some(s => s.name === studentName)
         ).length;
       };
@@ -526,7 +621,8 @@
         window.open(`https://wa.me/${cleanPhone}`, '_blank');
       };
 
-      const getExtendedWeeksDays = () => {
+      // 第 6 點：周曆資料用 useMemo
+      const extendedDays = useMemo(() => {
         const days = [];
         const [y, m, d] = todayStr.split('-').map(Number);
         for (let i = 0; i < 75; i++) {
@@ -536,14 +632,10 @@
           const dayNum = String(cur.getDate()).padStart(2, '0');
           const formatted = `${cy}-${cm}-${dayNum}`;
           const weekNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-          days.push({
-            dateStr: formatted,
-            dayNum: Number(dayNum),
-            weekName: weekNames[cur.getDay()]
-          });
+          days.push({ dateStr: formatted, dayNum: Number(dayNum), weekName: weekNames[cur.getDay()] });
         }
         return days;
-      };
+      }, [todayStr]);
 
       const getFull6WeeksGrid = (yearMonth) => {
         const [year, month] = yearMonth.split('-').map(Number);
@@ -558,11 +650,9 @@
           const pYear = month - 1 === 0 ? year - 1 : year;
           days.push({ dateStr: `${pYear}-${String(pMonth).padStart(2, '0')}-${String(pDay).padStart(2, '0')}`, dayNum: pDay, isCurrentMonth: false });
         }
-
         for (let d = 1; d <= currentMonthLastDate; d++) {
           days.push({ dateStr: `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`, dayNum: d, isCurrentMonth: true });
         }
-
         let nextDay = 1;
         while (days.length < 42) {
           const nMonth = month + 1 === 13 ? 1 : month + 1;
@@ -573,118 +663,148 @@
         return days;
       };
 
-      const daySchedule = schedule
-        .filter(item => item.date === selectedDate)
-        .sort((a, b) => timeToMinutes(a.startTime || a.time) - timeToMinutes(b.startTime || b.time));
+      const monthGrid = useMemo(() => getFull6WeeksGrid(scheduleMonth), [scheduleMonth]);
+
+      const daySchedule = useMemo(() =>
+        schedule
+          .filter(item => item.date === selectedDate)
+          .sort((a, b) => timeToMinutes(a.startTime || a.time) - timeToMinutes(b.startTime || b.time)),
+      [schedule, selectedDate]);
 
       const realTodayStr = todayStr;
-      const tomorrowLessons = schedule.filter(item => item.date === tomorrowStr);
-      const day7Lessons = schedule.filter(item => item.date === day7Str);
+      const tomorrowLessons = useMemo(() => schedule.filter(item => item.date === tomorrowStr), [schedule, tomorrowStr]);
+      const day7Lessons = useMemo(() => schedule.filter(item => item.date === day7Str), [schedule, day7Str]);
 
-      const monthlySchedule = schedule
-        .filter(item => (item.date || '').startsWith(selectedMonth))
-        .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0) || timeToMinutes(a.startTime || a.time) - timeToMinutes(b.startTime || b.time));
+      /* ---------- 第 6 點：月度統計 useMemo ---------- */
+      const monthlyStats = useMemo(() => {
+        const list = schedule
+          .filter(item => (item.date || '').startsWith(revenueMonth))
+          .sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0) || timeToMinutes(a.startTime || a.time) - timeToMinutes(b.startTime || b.time));
 
-      let estimatedIncome = 0;
-      let totalIncome = 0;
-      let totalExpense = 0;
-      const paymentMethodStats = { FPS: 0, PayMe: 0, 現金: 0, 銀行轉帳: 0 };
+        let estimatedIncome = 0;
+        let totalIncome = 0;
+        let totalExpense = 0;
+        const paymentMethodStats = { FPS: 0, PayMe: 0, 現金: 0, 銀行轉帳: 0 };
 
-      monthlySchedule.forEach(item => {
-        const totalFee = calculateTotalFee(item);
-        estimatedIncome += totalFee;
-        totalExpense += (Number(item.courtFee) || 0);
+        list.forEach(item => {
+          const totalFee = calculateTotalFee(item);
+          estimatedIncome += totalFee;
+          totalExpense += (Number(item.courtFee) || 0);
 
-        const studentsList = item.enrolledStudents || [];
-        if ((item.date || '') <= realTodayStr && studentsList.length > 0) {
-          const coach = Number(item.coachFee) || 0;
-          const court = Number(item.courtFee) || 0;
-          const totalCount = studentsList.length;
-          
-          if (item.feeMode === 'per_person') {
-            studentsList.forEach(st => {
-              if (st.isPaid) {
-                const perPersonCourt = totalCount > 0 ? court / totalCount : 0;
-                const amt = coach + perPersonCourt;
-                totalIncome += amt;
-                const method = st.payMethod || 'FPS';
-                paymentMethodStats[method] = (paymentMethodStats[method] || 0) + amt;
-              }
-            });
-          } else {
-            const paidCount = studentsList.filter(st => st.isPaid).length;
-            if (paidCount > 0) {
-              const portion = (paidCount / totalCount) * totalFee;
-              totalIncome += portion;
+          const studentsList = item.enrolledStudents || [];
+          if ((item.date || '') <= todayStr && studentsList.length > 0) {
+            const coach = Number(item.coachFee) || 0;
+            const court = Number(item.courtFee) || 0;
+            const totalCount = studentsList.length;
+
+            if (item.feeMode === 'per_person') {
               studentsList.forEach(st => {
                 if (st.isPaid) {
+                  const perPersonCourt = totalCount > 0 ? court / totalCount : 0;
+                  const amt = coach + perPersonCourt;
+                  totalIncome += amt;
                   const method = st.payMethod || 'FPS';
-                  paymentMethodStats[method] = (paymentMethodStats[method] || 0) + (totalFee / totalCount);
+                  paymentMethodStats[method] = (paymentMethodStats[method] || 0) + amt;
                 }
               });
+            } else {
+              const paidCount = studentsList.filter(st => st.isPaid).length;
+              if (paidCount > 0) {
+                const portion = (paidCount / totalCount) * totalFee;
+                totalIncome += portion;
+                studentsList.forEach(st => {
+                  if (st.isPaid) {
+                    const method = st.payMethod || 'FPS';
+                    paymentMethodStats[method] = (paymentMethodStats[method] || 0) + (totalFee / totalCount);
+                  }
+                });
+              }
             }
-          }
-        }
-      });
-
-      const netProfit = totalIncome - totalExpense;
-
-      const yearlySchedule = schedule.filter(item => (item.date || '').startsWith(selectedYear));
-      let yearlyExpectedIncome = 0;
-      let yearlyTotalIncome = 0;
-      let yearlyTotalExpense = 0;
-
-      const monthlyBreakdown = Array.from({ length: 12 }, (_, i) => {
-        const mStr = `${selectedYear}-${String(i + 1).padStart(2, '0')}`;
-        const mLessons = yearlySchedule.filter(item => (item.date || '').startsWith(mStr));
-        let mExp = 0;
-        let mInc = 0;
-        let mCost = 0;
-
-        mLessons.forEach(item => {
-          mExp += calculateTotalFee(item);
-          mCost += (Number(item.courtFee) || 0);
-          if ((item.date || '') <= realTodayStr && (item.enrolledStudents || []).length > 0) {
-            mInc += getLessonReceivedIncome(item);
           }
         });
 
-        yearlyExpectedIncome += mExp;
-        yearlyTotalIncome += mInc;
-        yearlyTotalExpense += mCost;
-
         return {
-          monthStr: mStr,
-          monthNum: i + 1,
-          lessonsCount: mLessons.length,
-          expectedIncome: mExp,
-          totalIncome: mInc,
-          totalExpense: mCost,
-          net: mInc - mCost
+          list,
+          estimatedIncome,
+          totalIncome,
+          totalExpense,
+          paymentMethodStats,
+          netProfit: totalIncome - totalExpense
         };
-      });
+      }, [schedule, revenueMonth, todayStr]);
 
-      const yearlyNetProfit = yearlyTotalIncome - yearlyTotalExpense;
+      const {
+        list: monthlySchedule,
+        estimatedIncome,
+        totalIncome,
+        totalExpense,
+        paymentMethodStats,
+        netProfit
+      } = monthlyStats;
 
-      const groupedCourtFees = monthlySchedule
-        .filter(item => (Number(item.courtFee) || 0) > 0)
-        .reduce((acc, item) => {
-          let rawPayer = (item.courtPayer || '').trim();
-          let payerKey = (!rawPayer || rawPayer === '待定' || rawPayer === '未定' || rawPayer === '未填寫') ? '待定' : rawPayer;
-          
-          if (!acc[payerKey]) {
-            acc[payerKey] = { payerName: payerKey, total: 0, items: [] };
-          }
-          acc[payerKey].total += Number(item.courtFee) || 0;
-          acc[payerKey].items.push(item);
-          return acc;
-        }, {});
+      /* ---------- 第 6 點：年度統計只在年檢視時才計算 ---------- */
+      const yearlyStats = useMemo(() => {
+        if (revenueViewMode !== 'year') return null;
+        const list = schedule.filter(item => (item.date || '').startsWith(selectedYear));
+        let expected = 0;
+        let income = 0;
+        let expense = 0;
 
-      const sortedPayerGroups = Object.values(groupedCourtFees).sort((a, b) => {
-        if (a.payerName === '待定') return 1;
-        if (b.payerName === '待定') return -1;
-        return a.payerName.localeCompare(b.payerName, 'zh-HK');
-      });
+        const breakdown = Array.from({ length: 12 }, (_, i) => {
+          const mStr = `${selectedYear}-${String(i + 1).padStart(2, '0')}`;
+          const mLessons = list.filter(item => (item.date || '').startsWith(mStr));
+          let mExp = 0, mInc = 0, mCost = 0;
+
+          mLessons.forEach(item => {
+            mExp += calculateTotalFee(item);
+            mCost += (Number(item.courtFee) || 0);
+            if ((item.date || '') <= todayStr && (item.enrolledStudents || []).length > 0) {
+              mInc += getLessonReceivedIncome(item);
+            }
+          });
+
+          expected += mExp;
+          income += mInc;
+          expense += mCost;
+
+          return {
+            monthStr: mStr,
+            monthNum: i + 1,
+            lessonsCount: mLessons.length,
+            expectedIncome: mExp,
+            totalIncome: mInc,
+            totalExpense: mCost,
+            net: mInc - mCost
+          };
+        });
+
+        return { expected, income, expense, breakdown, net: income - expense };
+      }, [schedule, selectedYear, revenueViewMode, todayStr]);
+
+      const yearlyExpectedIncome = yearlyStats ? yearlyStats.expected : 0;
+      const yearlyTotalIncome = yearlyStats ? yearlyStats.income : 0;
+      const yearlyTotalExpense = yearlyStats ? yearlyStats.expense : 0;
+      const monthlyBreakdown = yearlyStats ? yearlyStats.breakdown : [];
+      const yearlyNetProfit = yearlyStats ? yearlyStats.net : 0;
+
+      /* ---------- 第 6 點：支出分組 useMemo ---------- */
+      const sortedPayerGroups = useMemo(() => {
+        const acc = {};
+        monthlySchedule
+          .filter(item => (Number(item.courtFee) || 0) > 0)
+          .forEach(item => {
+            const rawPayer = (item.courtPayer || '').trim();
+            const payerKey = (!rawPayer || rawPayer === '待定' || rawPayer === '未定' || rawPayer === '未填寫') ? '待定' : rawPayer;
+            if (!acc[payerKey]) acc[payerKey] = { payerName: payerKey, total: 0, items: [] };
+            acc[payerKey].total += Number(item.courtFee) || 0;
+            acc[payerKey].items.push(item);
+          });
+        return Object.values(acc).sort((a, b) => {
+          if (a.payerName === '待定') return 1;
+          if (b.payerName === '待定') return -1;
+          return a.payerName.localeCompare(b.payerName, 'zh-HK');
+        });
+      }, [monthlySchedule]);
 
       const handleCopyWhatsAppSummary = () => {
         const unpaidDetails = [];
@@ -698,7 +818,7 @@
         });
 
         const lines = [
-          `🏸 *TH BADMINTON 月度財務摘要 (${selectedMonth})*`,
+          `🏸 *TH BADMINTON 月度財務摘要 (${revenueMonth})*`,
           `------------------------------`,
           `📅 總堂數：${monthlySchedule.length} 堂`,
           `💰 預計收入：HK$${estimatedIncome.toFixed(0)}`,
@@ -728,25 +848,33 @@
           return;
         }
 
+        // 第 14 點：防 CSV 公式注入 + 自動加引號
+        const csvCell = (val) => {
+          let s = String(val === null || val === undefined ? '' : val);
+          if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
+          if (/[",\n\r]/.test(s)) s = '"' + s.replace(/"/g, '""') + '"';
+          return s;
+        };
+
         const headers = ['課堂編號', '日期', '時間', '課程種類', '場地', '計費模式', '教練費', '場地費', '墊支人', '預計總收費', '實收金額', '學員名單及狀態'];
         const rows = monthlySchedule.map(item => {
           const totalFee = calculateTotalFee(item);
           const recFee = getLessonReceivedIncome(item);
           const studentSummary = (item.enrolledStudents || []).map(s => `${s.name}(${s.isPaid ? '已付' : '未付'}-${s.payMethod || 'FPS'})`).join('; ');
-          
+
           return [
-            item.id,
-            item.date,
-            `${item.startTime || item.time || ''}-${item.endTime}`,
-            `"${item.courseName}"`,
-            `"${item.court || ''}"`,
-            item.feeMode === 'per_person' ? '每人收費' : '整堂收費',
-            item.coachFee,
-            item.courtFee,
-            item.courtPayer || '待定',
-            totalFee,
-            recFee,
-            `"${studentSummary}"`
+            csvCell(item.id),
+            csvCell(item.date),
+            csvCell(`${item.startTime || item.time || ''}-${item.endTime}`),
+            csvCell(item.courseName),
+            csvCell(item.court || ''),
+            csvCell(item.feeMode === 'per_person' ? '每人收費' : '整堂收費'),
+            csvCell(item.coachFee),
+            csvCell(item.courtFee),
+            csvCell(item.courtPayer || '待定'),
+            csvCell(totalFee),
+            csvCell(recFee),
+            csvCell(studentSummary)
           ].join(',');
         });
 
@@ -755,8 +883,9 @@
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `TH_Badminton_Report_${selectedMonth}.csv`;
+        a.download = `TH_Badminton_Report_${revenueMonth}.csv`;
         a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       };
 
       const handleCancelLesson = (lessonId) => {
@@ -770,6 +899,12 @@
 
       const handleSaveLesson = (e) => {
         e.preventDefault();
+
+        // 第 2 點：禁止跨午夜（結束時間必須晚於開始時間）
+        if (timeToMinutes(lessonForm.endTime) <= timeToMinutes(lessonForm.startTime)) {
+          alert('結束時間必須晚於開始時間（暫不支援跨午夜課程）');
+          return;
+        }
 
         let finalCourtPayer = lessonForm.courtPayer;
         if (lessonForm.courtPayer === '__CUSTOM__') {
@@ -821,7 +956,7 @@
 
       const handleAddStudentToLesson = () => {
         if (!selectedLessonModal) return;
-        
+
         let targetName = addStudentSelect;
         if (addStudentSelect === '__CUSTOM__') {
           targetName = addStudentCustom.trim();
@@ -832,7 +967,7 @@
         }
 
         if (!targetName) { alert('請選擇或輸入學員姓名！'); return; }
-        
+
         const currentStudents = selectedLessonModal.enrolledStudents || [];
         if (currentStudents.some(s => s.name === targetName)) { alert('該學員已在名單中！'); return; }
         if (currentStudents.length >= selectedLessonModal.maxCapacity) { alert('該課節人數已滿！'); return; }
@@ -858,7 +993,7 @@
       const handleTogglePaidStatus = (studentName) => {
         if (!selectedLessonModal) return;
         const currentStudents = selectedLessonModal.enrolledStudents || [];
-        const updatedStudents = currentStudents.map(s => 
+        const updatedStudents = currentStudents.map(s =>
           s.name === studentName ? { ...s, isPaid: !s.isPaid } : s
         );
         const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
@@ -869,7 +1004,7 @@
       const handleUpdatePayMethod = (studentName, payMethod) => {
         if (!selectedLessonModal) return;
         const currentStudents = selectedLessonModal.enrolledStudents || [];
-        const updatedStudents = currentStudents.map(s => 
+        const updatedStudents = currentStudents.map(s =>
           s.name === studentName ? { ...s, payMethod } : s
         );
         const updatedLesson = { ...selectedLessonModal, enrolledStudents: updatedStudents };
@@ -879,7 +1014,6 @@
 
       const handleOpenRenewModal = (item) => {
         const nextDateStr = getDateOffsetFromBase(item.date, 7);
-
         setRenewForm({
           originalLesson: item,
           date: nextDateStr,
@@ -894,11 +1028,18 @@
 
       const handleConfirmRenewLesson = (e) => {
         e.preventDefault();
+
+        // 第 2 點：續堂也禁止跨午夜
+        if (timeToMinutes(renewForm.endTime) <= timeToMinutes(renewForm.startTime)) {
+          alert('結束時間必須晚於開始時間（暫不支援跨午夜課程）');
+          return;
+        }
+
         const item = renewForm.originalLesson;
         if (!item) return;
 
         const currentStudents = item.enrolledStudents || [];
-        const updatedStudents = renewForm.keepStudents 
+        const updatedStudents = renewForm.keepStudents
           ? currentStudents.map(s => ({ ...s, isPaid: false }))
           : [];
 
@@ -920,22 +1061,37 @@
       };
 
       const addToAppleCalendar = (item) => {
+        // 第 14 點：ICS 加上時區、轉義、撤銷 blob URL
         const dateStr = (item.date || '').replace(/-/g, '');
         const startT = (item.startTime || item.time || '00:00').replace(':', '') + '00';
         const endT = (item.endTime || item.startTime || item.time || '00:00').replace(':', '') + '00';
-        
+
         const startDT = `${dateStr}T${startT}`;
         const endDT = `${dateStr}T${endT}`;
 
         const studentsList = item.enrolledStudents || [];
-        const studentListStr = studentsList.map(s => s.name).join(', ') || '尚無學員';
+        const studentListStr = studentsList.map(s => s.name).join('、') || '尚無學員';
         const totalFee = calculateTotalFee(item);
 
+        const escapeICS = (s) => String(s || '')
+          .replace(/\\/g, '\\\\')
+          .replace(/;/g, '\\;')
+          .replace(/,/g, '\\,')
+          .replace(/\n/g, '\\n');
+
         const icsContent = [
-          'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TH.badminton App//EN', 'BEGIN:VEVENT',
-          `SUMMARY:🏸 ${item.courseName} (${studentsList.length}/${item.maxCapacity}人)`,
-          `DESCRIPTION:學員：${studentListStr}\\n計費模式：${item.feeMode === 'per_person' ? '每人學費' : '整堂學費'}\\n課堂費：HK$${item.coachFee}\\n場地費：HK$${item.courtFee}\\n預計總學費：HK$${totalFee}`,
-          `LOCATION:${item.court || '體育館'}`, `DTSTART:${startDT}`, `DTEND:${endDT}`, 'END:VEVENT', 'END:VCALENDAR'
+          'BEGIN:VCALENDAR',
+          'VERSION:2.0',
+          'PRODID:-//TH.badminton App//EN',
+          'CALSCALE:GREGORIAN',
+          'BEGIN:VEVENT',
+          `SUMMARY:${escapeICS('🏸 ' + item.courseName + ' (' + studentsList.length + '/' + item.maxCapacity + '人)')}`,
+          `DESCRIPTION:${escapeICS('學員：' + studentListStr + '\n計費模式：' + (item.feeMode === 'per_person' ? '每人學費' : '整堂學費') + '\n課堂費：HK$' + item.coachFee + '\n場地費：HK$' + item.courtFee + '\n預計總學費：HK$' + totalFee)}`,
+          `LOCATION:${escapeICS(item.court || '體育館')}`,
+          `DTSTART;TZID=Asia/Hong_Kong:${startDT}`,
+          `DTEND;TZID=Asia/Hong_Kong:${endDT}`,
+          'END:VEVENT',
+          'END:VCALENDAR'
         ].join('\r\n');
 
         const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
@@ -946,6 +1102,7 @@
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       };
 
       const handleSaveStudent = (e) => {
@@ -953,7 +1110,21 @@
         if (!studentForm.name) return;
 
         if (studentForm.id) {
+          // 第 7 點：改名時同步更新 schedule 內的學員姓名
+          const oldStudent = students.find(s => s.id === studentForm.id);
+          const oldName = oldStudent ? oldStudent.name : null;
+
           setStudents(students.map(s => s.id === studentForm.id ? { ...studentForm } : s));
+
+          if (oldName && oldName !== studentForm.name) {
+            setSchedule(prev => prev.map(l => ({
+              ...l,
+              enrolledStudents: (l.enrolledStudents || []).map(st =>
+                st.name === oldName ? { ...st, name: studentForm.name } : st
+              )
+            })));
+          }
+
           setShowEditStudentModal(false);
           if (activeStudentDetail && activeStudentDetail.id === studentForm.id) {
             setActiveStudentDetail({ ...studentForm });
@@ -1008,6 +1179,7 @@
         a.href = url;
         a.download = `th_badminton_backup_${getRealTodayString()}.json`;
         a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
       };
 
       const importBackupData = (e) => {
@@ -1027,6 +1199,28 @@
           } catch (err) { alert('檔案格式錯誤！'); }
         };
         reader.readAsText(file);
+      };
+
+      // 第 2 點：智慧時間連動，超出一天就不自動調整
+      const handleStartTimeChange = (newStart) => {
+        const oldStartMins = timeToMinutes(lessonForm.startTime);
+        const oldEndMins = timeToMinutes(lessonForm.endTime);
+        const duration = oldEndMins > oldStartMins ? (oldEndMins - oldStartMins) : 60;
+
+        const newStartMins = timeToMinutes(newStart);
+        const newEndMins = newStartMins + duration;
+
+        if (newEndMins >= 24 * 60) {
+          // 會跨午夜，只更新開始時間，讓使用者手動調整結束時間
+          setLessonForm(prev => ({ ...prev, startTime: newStart }));
+          return;
+        }
+
+        setLessonForm(prev => ({
+          ...prev,
+          startTime: newStart,
+          endTime: minutesToTime(newEndMins)
+        }));
       };
 
       const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, boxSizing: 'border-box', fontSize: '14px', outline: 'none' };
@@ -1062,29 +1256,28 @@
         fileText: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
       };
 
-      const closeButtonStyle = { 
-        border: 'none', 
-        backgroundColor: isDarkMode ? '#333' : '#e5e5ea', 
-        color: theme.textPrimary, 
-        width: '32px', 
-        height: '32px', 
-        borderRadius: '50%', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        cursor: 'pointer' 
+      const closeButtonStyle = {
+        border: 'none',
+        backgroundColor: isDarkMode ? '#333' : '#e5e5ea',
+        color: theme.textPrimary,
+        width: '32px',
+        height: '32px',
+        borderRadius: '50%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        cursor: 'pointer'
       };
 
       const formatAmount = (num) => showAmount ? `$${Number(num).toFixed(0)}` : '****';
 
       const renderWeek = () => {
-        const extendedDays = getExtendedWeeksDays();
         return (
           <div className="no-scrollbar" style={{ display: 'flex', overflowX: 'auto', gap: '8px', paddingBottom: '4px', scrollBehavior: 'smooth' }}>
             {extendedDays.map(({ dateStr, dayNum, weekName }) => {
               const isSelected = dateStr === selectedDate;
               const isToday = dateStr === realTodayStr;
-              const isWithin7Days = next7DaysList.includes(dateStr);
+              const isWithin7Days = next7DaysSet.has(dateStr);
               const isSeventhDay = dateStr === seventhDayStr;
               const hasLesson = schedule.some(s => s.date === dateStr);
 
@@ -1093,32 +1286,20 @@
               let subColor = theme.textSecondary;
 
               if (isSelected) {
-                bgColor = '#0071e3';
-                textColor = '#ffffff';
-                subColor = 'rgba(255,255,255,0.85)';
+                bgColor = '#0071e3'; textColor = '#ffffff'; subColor = 'rgba(255,255,255,0.85)';
               } else if (isToday) {
-                textColor = '#ff3b30';
-                subColor = '#ff3b30';
+                textColor = '#ff3b30'; subColor = '#ff3b30';
               } else if (isSeventhDay) {
-                bgColor = isDarkMode ? '#3d2612' : '#fff3e0';
-                textColor = '#d97706';
-                subColor = '#d97706';
+                bgColor = isDarkMode ? '#3d2612' : '#fff3e0'; textColor = '#d97706'; subColor = '#d97706';
               } else if (isWithin7Days) {
-                bgColor = isDarkMode ? '#241b12' : '#fdf8f2';
-                textColor = isDarkMode ? '#f6ad55' : '#b45309';
-                subColor = '#d97706';
+                bgColor = isDarkMode ? '#241b12' : '#fdf8f2'; textColor = isDarkMode ? '#f6ad55' : '#b45309'; subColor = '#d97706';
               }
 
               let borderStyle = `1px solid ${theme.border}`;
-              if (isSelected) {
-                borderStyle = '1px solid #0071e3';
-              } else if (isToday) {
-                borderStyle = '1.5px solid #ff3b30';
-              } else if (isSeventhDay) {
-                borderStyle = '1.5px solid #d97706';
-              } else if (isWithin7Days) {
-                borderStyle = '1px solid #f6ad55';
-              }
+              if (isSelected) borderStyle = '1px solid #0071e3';
+              else if (isToday) borderStyle = '1.5px solid #ff3b30';
+              else if (isSeventhDay) borderStyle = '1.5px solid #d97706';
+              else if (isWithin7Days) borderStyle = '1px solid #f6ad55';
 
               return (
                 <div
@@ -1126,29 +1307,17 @@
                   ref={el => weekDateRefs.current[dateStr] = el}
                   onClick={() => selectDate(dateStr)}
                   style={{
-                    flexShrink: 0,
-                    width: '52px',
-                    height: '72px',
-                    borderRadius: '16px',
-                    backgroundColor: bgColor,
-                    color: textColor,
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    justifyContent: 'center',
+                    flexShrink: 0, width: '52px', height: '72px', borderRadius: '16px',
+                    backgroundColor: bgColor, color: textColor,
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
                     cursor: 'pointer',
                     boxShadow: isSelected ? '0 4px 12px rgba(0, 113, 227, 0.25)' : theme.shadow,
                     border: borderStyle,
                     transition: 'all 0.25s cubic-bezier(0.25, 1, 0.5, 1)',
-                    position: 'relative',
-                    userSelect: 'none'
+                    position: 'relative', userSelect: 'none'
                   }}>
-                  <span style={{ fontSize: '11px', fontWeight: '600', color: subColor, textTransform: 'uppercase' }}>
-                    {weekName}
-                  </span>
-                  <span style={{ fontSize: '18px', fontWeight: '700', marginTop: '2px' }}>
-                    {dayNum}
-                  </span>
+                  <span style={{ fontSize: '11px', fontWeight: '600', color: subColor, textTransform: 'uppercase' }}>{weekName}</span>
+                  <span style={{ fontSize: '18px', fontWeight: '700', marginTop: '2px' }}>{dayNum}</span>
                   {hasLesson && (
                     <div style={{
                       width: '5px', height: '5px', borderRadius: '50%',
@@ -1164,27 +1333,26 @@
       };
 
       const renderMonth = () => {
-        const gridDays = getFull6WeeksGrid(selectedMonth);
         return (
-          <div 
+          <div
             onTouchStart={handleMonthTouchStart}
             onTouchEnd={handleMonthTouchEnd}
-            style={{ 
-              backgroundColor: theme.cardBg, borderRadius: '24px', padding: '14px', 
+            style={{
+              backgroundColor: theme.cardBg, borderRadius: '24px', padding: '14px',
               boxShadow: theme.shadow, border: `1px solid ${theme.border}`, touchAction: 'pan-y'
             }}>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', fontSize: '11px', fontWeight: '700', color: theme.textSecondary, marginBottom: '8px' }}>
               {weekLabels.map((w, idx) => <div key={idx}>{w}</div>)}
             </div>
-            <div 
-              key={selectedMonth} 
+            <div
+              key={scheduleMonth}
               className={monthSlideDir}
               onAnimationEnd={() => setMonthSlideDir('')}
               style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}>
-              {gridDays.map(({ dateStr, dayNum, isCurrentMonth }) => {
+              {monthGrid.map(({ dateStr, dayNum, isCurrentMonth }) => {
                 const isSelected = dateStr === selectedDate;
                 const isToday = dateStr === realTodayStr;
-                const isWithin7Days = next7DaysList.includes(dateStr);
+                const isWithin7Days = next7DaysSet.has(dateStr);
                 const isSeventhDay = dateStr === seventhDayStr;
                 const hasLesson = schedule.some(s => s.date === dateStr);
 
@@ -1193,20 +1361,13 @@
                 let borderColor = theme.border;
 
                 if (isSelected) {
-                  bgColor = '#0071e3';
-                  textColor = '#ffffff';
-                  borderColor = '#0071e3';
+                  bgColor = '#0071e3'; textColor = '#ffffff'; borderColor = '#0071e3';
                 } else if (isToday) {
-                  textColor = '#ff3b30';
-                  borderColor = '#ff3b30';
+                  textColor = '#ff3b30'; borderColor = '#ff3b30';
                 } else if (isSeventhDay) {
-                  bgColor = isDarkMode ? '#3d2612' : '#fff3e0';
-                  textColor = '#d97706';
-                  borderColor = '#d97706';
+                  bgColor = isDarkMode ? '#3d2612' : '#fff3e0'; textColor = '#d97706'; borderColor = '#d97706';
                 } else if (isWithin7Days) {
-                  bgColor = isDarkMode ? '#241b12' : '#fdf8f2';
-                  textColor = isDarkMode ? '#f6ad55' : '#b45309';
-                  borderColor = '#d97706';
+                  bgColor = isDarkMode ? '#241b12' : '#fdf8f2'; textColor = isDarkMode ? '#f6ad55' : '#b45309'; borderColor = '#f6ad55';
                 }
 
                 return (
@@ -1215,17 +1376,11 @@
                     onClick={() => selectDate(dateStr)}
                     style={{
                       height: '36px',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: bgColor,
-                      color: textColor,
+                      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                      backgroundColor: bgColor, color: textColor,
                       fontSize: '13px',
                       fontWeight: isSelected || isToday || isWithin7Days ? '700' : '500',
-                      borderRadius: '10px',
-                      cursor: 'pointer',
-                      position: 'relative',
+                      borderRadius: '10px', cursor: 'pointer', position: 'relative',
                       opacity: isCurrentMonth || isWithin7Days ? 1 : 0.35,
                       border: `1.5px solid ${borderColor}`,
                       boxShadow: isSelected ? '0 4px 12px rgba(0, 113, 227, 0.3)' : 'none',
@@ -1253,7 +1408,7 @@
 
         return (
           <div className="apple-fade-in">
-            <button 
+            <button
               onClick={handleOpenAddModal}
               style={{ width: '100%', padding: '14px', backgroundColor: '#34c759', color: '#fff', border: 'none', borderRadius: '16px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '16px', boxShadow: '0 4px 16px rgba(52, 199, 89, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
               {icons.plus} 新增課堂
@@ -1264,7 +1419,7 @@
                 {icons.calendar} {formattedTitle}
               </span>
               <span style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {icons.lightbulb} 雙擊卡片加學員 / 管理
+                {icons.lightbulb} 點擊卡片加學員 / 管理
               </span>
             </div>
 
@@ -1276,23 +1431,19 @@
               daySchedule.map(item => {
                 const totalFee = calculateTotalFee(item);
                 const overlapped = isLessonOverlapped(item, daySchedule);
-                
                 const studentsList = item.enrolledStudents || [];
 
                 return (
-                  <div 
-                    key={item.id} 
-                    onDoubleClick={() => setSelectedLessonModal(item)}
-                    style={{ 
-                      ...cardStyle, 
-                      borderLeft: overlapped ? '5px solid #ff3b30' : '5px solid #0071e3', 
+                  <div
+                    key={item.id}
+                    onClick={() => setSelectedLessonModal(item)}
+                    style={{
+                      ...cardStyle,
+                      borderLeft: overlapped ? '5px solid #ff3b30' : '5px solid #0071e3',
                       border: overlapped ? '1.5px solid #ff3b30' : `1px solid ${theme.border}`,
                       backgroundColor: overlapped ? (isDarkMode ? '#3a1c1c' : '#fff2f2') : theme.cardBg,
-                      cursor: 'pointer', 
-                      userSelect: 'none',
-                      position: 'relative'
+                      cursor: 'pointer', userSelect: 'none', position: 'relative'
                     }}>
-                    
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <strong style={{ fontSize: '16px', fontWeight: '700', color: overlapped ? '#ff3b30' : theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
                         {icons.shuttlecock} {item.courseName}
@@ -1324,13 +1475,13 @@
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); addToAppleCalendar(item); }} 
+                      <button
+                        onClick={(e) => { e.stopPropagation(); addToAppleCalendar(item); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#e0f2fe', color: '#0284c7', border: 'none', borderRadius: '12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
                         {icons.calendarPlus} 匯出
                       </button>
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); handleCancelLesson(item.id); }} 
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleCancelLesson(item.id); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
                         {icons.xCircle} 取消
                       </button>
@@ -1344,35 +1495,29 @@
       };
 
       return (
-        <div style={{ 
-          maxWidth: '480px', margin: '0 auto', 
-          paddingTop: 'calc(10px + env(safe-area-inset-top, 10px))', 
+        <div style={{
+          maxWidth: '480px', margin: '0 auto',
+          paddingTop: 'calc(10px + env(safe-area-inset-top, 10px))',
           paddingLeft: '16px', paddingRight: '16px',
-          paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 20px))', 
-          fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif', backgroundColor: theme.bg, color: theme.textPrimary, minHeight: '100vh', boxSizing: 'border-box', transition: 'background-color 0.2s, color 0.2s' 
+          paddingBottom: 'calc(100px + env(safe-area-inset-bottom, 20px))',
+          fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", sans-serif',
+          backgroundColor: theme.bg, color: theme.textPrimary, minHeight: '100vh', boxSizing: 'border-box',
+          transition: 'background-color 0.2s, color 0.2s'
         }}>
           <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
+            position: 'fixed', top: 0, left: 0, right: 0,
             height: 'calc(44px + env(safe-area-inset-top, 0px))',
             paddingTop: 'env(safe-area-inset-top, 0px)',
             backgroundColor: isDarkMode ? 'rgba(18, 18, 18, 0.8)' : 'rgba(245, 245, 247, 0.8)',
-            backdropFilter: 'blur(20px)',
-            WebkitBackdropFilter: 'blur(20px)',
+            backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
             borderBottom: `1px solid ${theme.border}`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             zIndex: 1500,
             opacity: scrolled ? 1 : 0,
             pointerEvents: scrolled ? 'auto' : 'none',
             transform: scrolled ? 'translateY(0)' : 'translateY(-10px)',
             transition: 'opacity 0.25s ease-out, transform 0.25s ease-out',
-            maxWidth: '480px',
-            margin: '0 auto',
-            boxSizing: 'border-box'
+            maxWidth: '480px', margin: '0 auto', boxSizing: 'border-box'
           }}>
             <span style={{ fontSize: '16px', fontWeight: '700', color: theme.textPrimary, letterSpacing: '-0.3px' }}>
               {currentTabObj.title}
@@ -1380,12 +1525,8 @@
           </div>
 
           <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '16px', position: 'relative', zIndex: 1100, minHeight: '38px' }}>
-            <h1 style={{ 
-              margin: 0, 
-              fontSize: '32px', 
-              fontWeight: '800', 
-              color: theme.textPrimary, 
-              letterSpacing: '-0.8px',
+            <h1 style={{
+              margin: 0, fontSize: '32px', fontWeight: '800', color: theme.textPrimary, letterSpacing: '-0.8px',
               opacity: scrolled ? 0 : 1,
               transform: scrolled ? 'translateY(-6px)' : 'translateY(0)',
               transition: 'opacity 0.2s ease-out, transform 0.2s ease-out',
@@ -1396,23 +1537,23 @@
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <div ref={notifRef} style={{ position: 'relative' }}>
-                <button 
+                <button
                   onClick={() => setShowDropdownNotif(!showDropdownNotif)}
-                  style={{ 
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', 
-                    backgroundColor: theme.cardBg, color: '#ff9500', border: `1px solid ${theme.border}`, 
-                    borderRadius: '50%', cursor: 'pointer', boxShadow: theme.shadow 
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px',
+                    backgroundColor: theme.cardBg, color: '#ff9500', border: `1px solid ${theme.border}`,
+                    borderRadius: '50%', cursor: 'pointer', boxShadow: theme.shadow
                   }}
                   title="課堂提醒">
                   {icons.bell}
                 </button>
 
                 {showDropdownNotif && (
-                  <div style={{ 
-                    position: 'absolute', right: 0, top: '42px', width: '300px', 
-                    backgroundColor: theme.modalBg, color: theme.textPrimary, 
-                    border: `1px solid ${theme.border}`, borderRadius: '20px', 
-                    boxShadow: '0 10px 30px rgba(0,0,0,0.15)', padding: '16px', zIndex: 1600 
+                  <div style={{
+                    position: 'absolute', right: 0, top: '42px', width: '300px',
+                    backgroundColor: theme.modalBg, color: theme.textPrimary,
+                    border: `1px solid ${theme.border}`, borderRadius: '20px',
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.15)', padding: '16px', zIndex: 1600
                   }}>
                     <div style={{ fontWeight: '700', fontSize: '14px', color: '#ff9500', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.border}`, paddingBottom: '8px' }}>
                       <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.bell} 課堂與訂場提醒</span>
@@ -1433,7 +1574,7 @@
                               <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
                                 {icons.shuttlecock} {item.courseName} ({item.startTime})
                               </span>
-                              <button 
+                              <button
                                 onClick={() => {
                                   if (studentsList.length === 0) { alert('該課堂尚未有學員'); return; }
                                   const firstSt = studentsList[0];
@@ -1463,7 +1604,7 @@
                               <span style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: '600' }}>
                                 {icons.shuttlecock} {item.courseName} ({item.startTime})
                               </span>
-                              <button 
+                              <button
                                 onClick={() => {
                                   if (studentsList.length === 0) { alert('該課堂尚未有學員'); return; }
                                   const firstSt = studentsList[0];
@@ -1482,12 +1623,12 @@
                 )}
               </div>
 
-              <button 
-                onClick={() => setIsDarkMode(!isDarkMode)} 
-                style={{ 
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px', 
-                  backgroundColor: theme.cardBg, color: theme.textPrimary, border: `1px solid ${theme.border}`, 
-                  borderRadius: '50%', cursor: 'pointer', boxShadow: theme.shadow 
+              <button
+                onClick={() => setIsDarkMode(!isDarkMode)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', width: '34px', height: '34px',
+                  backgroundColor: theme.cardBg, color: theme.textPrimary, border: `1px solid ${theme.border}`,
+                  borderRadius: '50%', cursor: 'pointer', boxShadow: theme.shadow
                 }}
                 title={isDarkMode ? '切換為淺色模式' : '切換為深色模式'}>
                 {isDarkMode ? icons.sun : icons.moon}
@@ -1502,36 +1643,33 @@
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
                     <span style={{ fontSize: '18px', fontWeight: '800', color: theme.textPrimary, textTransform: 'uppercase', letterSpacing: '-0.3px' }}>
                       {(() => {
-                        const [y, m] = selectedMonth.split('-');
+                        const [, m] = scheduleMonth.split('-');
                         const monthNames = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
                         return monthNames[Number(m)] || m;
                       })()}
                     </span>
                     <span style={{ fontSize: '13px', fontWeight: '600', color: theme.textSecondary }}>
-                      {selectedMonth.split('-')[0]}
+                      {scheduleMonth.split('-')[0]}
                     </span>
                   </div>
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <button 
+                    <button
                       onClick={handleGoToday}
-                      style={{ 
-                        height: '28px', padding: '0 12px', 
-                        backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8', 
-                        color: '#0071e3', 
-                        border: 'none', 
-                        borderRadius: '12px', 
-                        fontSize: '12px', fontWeight: '700', 
-                        cursor: 'pointer', 
-                        display: 'flex', alignItems: 'center', justifyContent: 'center' 
+                      style={{
+                        height: '28px', padding: '0 12px',
+                        backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8',
+                        color: '#0071e3', border: 'none', borderRadius: '12px',
+                        fontSize: '12px', fontWeight: '700', cursor: 'pointer',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
                       }}
                       title="回到今天">
                       今
                     </button>
 
-                    <div style={{ 
-                      backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8', 
-                      borderRadius: '12px', padding: '2px', display: 'flex', position: 'relative', width: '110px', height: '28px', boxSizing: 'border-box' 
+                    <div style={{
+                      backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8',
+                      borderRadius: '12px', padding: '2px', display: 'flex', position: 'relative', width: '110px', height: '28px', boxSizing: 'border-box'
                     }}>
                       <div style={{
                         position: 'absolute', top: '2px', bottom: '2px',
@@ -1541,12 +1679,12 @@
                         boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
                         transition: 'left 0.25s cubic-bezier(0.25, 1, 0.5, 1)'
                       }} />
-                      <button 
+                      <button
                         onClick={() => switchView('week')}
                         style={{ flex: 1, border: 'none', background: 'transparent', color: calendarViewMode === 'week' ? theme.textPrimary : theme.textSecondary, fontSize: '12px', fontWeight: '600', padding: '0', cursor: 'pointer', zIndex: 1, textAlign: 'center' }}>
                         周
                       </button>
-                      <button 
+                      <button
                         onClick={() => switchView('month')}
                         style={{ flex: 1, border: 'none', background: 'transparent', color: calendarViewMode === 'month' ? theme.textPrimary : theme.textSecondary, fontSize: '12px', fontWeight: '600', padding: '0', cursor: 'pointer', zIndex: 1, textAlign: 'center' }}>
                         月
@@ -1565,21 +1703,20 @@
 
             {activeTab === 'revenue' && (
               <div>
-                {/* 頂部切換器：月檢視 vs 年檢視 */}
                 <div style={{ ...cardStyle, padding: '12px 16px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                   {revenueViewMode === 'month' ? (
-                    <input 
-                      type="month" 
-                      value={selectedMonth} 
-                      onChange={e => setSelectedMonth(e.target.value)} 
-                      style={{ padding: '6px 10px', fontSize: '14px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }} 
+                    <input
+                      type="month"
+                      value={revenueMonth}
+                      onChange={e => setRevenueMonth(e.target.value)}
+                      style={{ padding: '6px 10px', fontSize: '14px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }}
                     />
                   ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <span style={{ fontSize: '14px', fontWeight: '700', color: theme.textSecondary }}>選擇年度：</span>
-                      <select 
-                        value={selectedYear} 
-                        onChange={e => setSelectedYear(e.target.value)} 
+                      <select
+                        value={selectedYear}
+                        onChange={e => setSelectedYear(e.target.value)}
                         style={{ padding: '6px 12px', fontSize: '14px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, fontWeight: '700' }}>
                         {[2024, 2025, 2026, 2027, 2028].map(y => (
                           <option key={y} value={String(y)} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{y} 年</option>
@@ -1589,9 +1726,9 @@
                   )}
 
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <div style={{ 
-                      backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8', 
-                      borderRadius: '12px', padding: '2px', display: 'flex', position: 'relative', width: '96px', height: '28px', boxSizing: 'border-box' 
+                    <div style={{
+                      backgroundColor: isDarkMode ? '#2c2c2e' : '#e3e3e8',
+                      borderRadius: '12px', padding: '2px', display: 'flex', position: 'relative', width: '96px', height: '28px', boxSizing: 'border-box'
                     }}>
                       <div style={{
                         position: 'absolute', top: '2px', bottom: '2px',
@@ -1601,20 +1738,20 @@
                         boxShadow: '0 2px 6px rgba(0,0,0,0.1)',
                         transition: 'left 0.25s cubic-bezier(0.25, 1, 0.5, 1)'
                       }} />
-                      <button 
+                      <button
                         onClick={() => setRevenueViewMode('month')}
                         style={{ flex: 1, border: 'none', background: 'transparent', color: revenueViewMode === 'month' ? theme.textPrimary : theme.textSecondary, fontSize: '12px', fontWeight: '600', padding: '0', cursor: 'pointer', zIndex: 1, textAlign: 'center' }}>
                         月
                       </button>
-                      <button 
+                      <button
                         onClick={() => setRevenueViewMode('year')}
                         style={{ flex: 1, border: 'none', background: 'transparent', color: revenueViewMode === 'year' ? theme.textPrimary : theme.textSecondary, fontSize: '12px', fontWeight: '600', padding: '0', cursor: 'pointer', zIndex: 1, textAlign: 'center' }}>
                         年
                       </button>
                     </div>
 
-                    <button 
-                      onClick={() => setShowAmount(!showAmount)} 
+                    <button
+                      onClick={() => setShowAmount(!showAmount)}
                       style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 10px', backgroundColor: showAmount ? theme.inputBg : '#0071e3', color: showAmount ? theme.textPrimary : '#fff', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: '600', cursor: 'pointer', height: '28px' }}
                       title={showAmount ? '隱藏金額' : '顯示金額'}>
                       {showAmount ? icons.eyeOff : icons.eye}
@@ -1622,10 +1759,8 @@
                   </div>
                 </div>
 
-                {/* ===== 月度檢視 (MONTH VIEW) ===== */}
                 {revenueViewMode === 'month' && (
                   <div>
-                    {/* 月度核心四大數據 */}
                     <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center', padding: '14px' }}>
                       <div style={{ backgroundColor: isDarkMode ? '#1b3320' : '#f2f9f4', padding: '12px', borderRadius: '16px' }}>
                         <div style={{ fontSize: '11px', color: '#34c759', marginBottom: '4px', fontWeight: '700' }}>預計收入 (全月已排課)</div>
@@ -1645,7 +1780,6 @@
                       </div>
                     </div>
 
-                    {/* 收款途徑對帳小計 */}
                     <div style={{ ...cardStyle, padding: '12px 14px', marginBottom: '14px' }}>
                       <div style={{ fontSize: '12px', fontWeight: '700', color: theme.textSecondary, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         {icons.money} 本月收款途徑對帳小計：
@@ -1662,7 +1796,6 @@
                       </div>
                     </div>
 
-                    {/* 支出明細 (按場地墊支人) */}
                     <div style={{ marginBottom: '10px', fontWeight: '700', fontSize: '15px', color: theme.textSecondary, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span>支出明細 (按場地墊支人)：</span>
                       <span style={{ fontSize: '12px', color: theme.textMuted, fontWeight: 'normal', display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 點擊展開/折疊</span>
@@ -1678,14 +1811,11 @@
 
                           return (
                             <div key={group.payerName} style={{ ...cardStyle, padding: '0', overflow: 'hidden', borderLeft: isPending ? '5px solid #ff9500' : '5px solid #0071e3', marginBottom: '12px' }}>
-                              <div 
+                              <div
                                 onClick={() => togglePayerExpand(group.payerName)}
-                                style={{ 
-                                  padding: '16px', 
-                                  display: 'flex', 
-                                  justifyContent: 'space-between', 
-                                  alignItems: 'center', 
-                                  cursor: 'pointer', 
+                                style={{
+                                  padding: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                  cursor: 'pointer',
                                   backgroundColor: isPending ? (isDarkMode ? '#3b2811' : '#fffcf0') : theme.cardBg,
                                   userSelect: 'none'
                                 }}>
@@ -1721,11 +1851,11 @@
                                     </thead>
                                     <tbody>
                                       {group.items.map(item => (
-                                        <tr 
-                                          key={item.id} 
-                                          onDoubleClick={() => setSelectedLessonModal(item)}
+                                        <tr
+                                          key={item.id}
+                                          onClick={() => setSelectedLessonModal(item)}
                                           style={{ borderBottom: `1px dashed ${theme.border}`, cursor: 'pointer' }}
-                                          title="雙擊編輯此課堂">
+                                          title="點擊編輯此課堂">
                                           <td style={{ padding: '8px 6px', color: theme.textPrimary }}>{(item.date || '').substring(5)}</td>
                                           <td style={{ padding: '8px 6px', color: theme.textSecondary }}>{item.startTime || item.time || ''}</td>
                                           <td style={{ padding: '8px 6px' }}>
@@ -1747,11 +1877,8 @@
                       )}
                     </div>
 
-                    {/* 收入明細 (4 欄表格形式：日期加開始時間｜課程｜學員加收款狀態｜金額) */}
                     <div style={{ marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontWeight: '700', fontSize: '15px', color: theme.textSecondary }}>收入明細：</span>
-                      
-                      {/* 狀態過濾鈕 */}
                       <div style={{ display: 'flex', gap: '4px' }}>
                         {[
                           { id: 'all', label: '全部' },
@@ -1762,12 +1889,7 @@
                             key={f.id}
                             onClick={() => setRevenueStatusFilter(f.id)}
                             style={{
-                              border: 'none',
-                              padding: '4px 8px',
-                              borderRadius: '8px',
-                              fontSize: '11px',
-                              fontWeight: '700',
-                              cursor: 'pointer',
+                              border: 'none', padding: '4px 8px', borderRadius: '8px', fontSize: '11px', fontWeight: '700', cursor: 'pointer',
                               backgroundColor: revenueStatusFilter === f.id ? '#0071e3' : theme.inputBg,
                               color: revenueStatusFilter === f.id ? '#fff' : theme.textSecondary
                             }}>
@@ -1777,7 +1899,6 @@
                       </div>
                     </div>
 
-                    {/* 表格清單 (僅雙擊觸發 Modal，固定寬度比例防止擠壓，地點超長自動截斷) */}
                     <div style={{ ...cardStyle, padding: '0', overflow: 'hidden', marginBottom: '14px' }}>
                       {(() => {
                         const filteredLessons = monthlySchedule.filter(item => {
@@ -1814,50 +1935,30 @@
                                   const studentsList = item.enrolledStudents || [];
 
                                   return (
-                                    <tr 
+                                    <tr
                                       key={item.id}
-                                      onDoubleClick={() => setSelectedLessonModal(item)}
+                                      onClick={() => setSelectedLessonModal(item)}
                                       style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer', userSelect: 'none' }}
-                                      title="雙擊查看詳情">
-                                      
-                                      {/* 1. 日期加開始時間 */}
+                                      title="點擊查看詳情">
                                       <td style={{ padding: '10px 6px', verticalAlign: 'middle', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                         <div style={{ fontWeight: '700', color: theme.textPrimary }}>{(item.date || '').substring(5)}</div>
                                         <div style={{ fontSize: '11px', color: theme.textMuted }}>{item.startTime || item.time || ''}</div>
                                       </td>
-
-                                      {/* 2. 課程及地點 (寬度足夠且超長自動截斷) */}
                                       <td style={{ padding: '10px 6px', verticalAlign: 'middle', minWidth: '96px', overflow: 'hidden' }}>
                                         <div style={{ fontSize: '12px', fontWeight: '700', color: theme.textPrimary, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                           {item.courseName}
                                         </div>
                                         {item.court && (
-                                          <div 
-                                            style={{ 
-                                              fontSize: '10px', 
-                                              color: theme.textMuted, 
-                                              marginTop: '2px', 
-                                              whiteSpace: 'nowrap', 
-                                              overflow: 'hidden', 
-                                              textOverflow: 'ellipsis' 
-                                            }} 
-                                            title={item.court}>
+                                          <div style={{ fontSize: '10px', color: theme.textMuted, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.court}>
                                             {item.court}
                                           </div>
                                         )}
                                       </td>
-
-                                      {/* 3. 學員加收款狀態 */}
                                       <td style={{ padding: '10px 6px', verticalAlign: 'middle' }}>
                                         {studentsList.length > 0 ? (
                                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                                             {studentsList.map((st, sIdx) => (
-                                              <span 
-                                                key={sIdx} 
-                                                style={{ 
-                                                  display: 'inline-flex', alignItems: 'center', gap: '3px', 
-                                                  backgroundColor: theme.inputBg, padding: '2px 5px', borderRadius: '6px', fontSize: '10.5px' 
-                                                }}>
+                                              <span key={sIdx} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', backgroundColor: theme.inputBg, padding: '2px 5px', borderRadius: '6px', fontSize: '10.5px' }}>
                                                 <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: st.isPaid ? '#34c759' : '#ff3b30', flexShrink: 0 }}></span>
                                                 <span style={{ color: theme.textPrimary, fontWeight: '600', whiteSpace: 'nowrap' }}>{st.name}</span>
                                                 <span style={{ color: theme.textMuted, fontSize: '9px', whiteSpace: 'nowrap' }}>({st.payMethod || 'FPS'})</span>
@@ -1868,8 +1969,6 @@
                                           <span style={{ color: theme.textMuted, fontSize: '11px' }}>尚無學員</span>
                                         )}
                                       </td>
-
-                                      {/* 4. 金額 (純數字，右對齊) */}
                                       <td style={{ padding: '10px 8px', textAlign: 'right', verticalAlign: 'middle', whiteSpace: 'nowrap' }}>
                                         <div style={{ fontWeight: '800', fontSize: '13px', color: '#34c759' }}>
                                           {formatAmount(totalFee)}
@@ -1885,14 +1984,13 @@
                       })()}
                     </div>
 
-                    {/* WhatsApp 摘要 & CSV 匯出功能按鈕 */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
-                      <button 
+                      <button
                         onClick={handleCopyWhatsAppSummary}
                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
                         {icons.whatsapp} WhatsApp 摘要
                       </button>
-                      <button 
+                      <button
                         onClick={handleExportCSVReport}
                         style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: `1px solid ${theme.border}`, borderRadius: '14px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
                         {icons.fileText} 匯出 CSV 報表
@@ -1901,10 +1999,8 @@
                   </div>
                 )}
 
-                {/* ===== 年度檢視 (YEAR VIEW) ===== */}
-                {revenueViewMode === 'year' && (
+                {revenueViewMode === 'year' && yearlyStats && (
                   <div className="apple-fade-in">
-                    {/* 年度核心四大數據 */}
                     <div style={{ ...cardStyle, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', textAlign: 'center', padding: '14px' }}>
                       <div style={{ backgroundColor: isDarkMode ? '#1b3320' : '#f2f9f4', padding: '12px', borderRadius: '16px' }}>
                         <div style={{ fontSize: '11px', color: '#34c759', marginBottom: '4px', fontWeight: '700' }}>全年預計總收入</div>
@@ -1929,29 +2025,24 @@
                       <span style={{ fontSize: '12px', color: theme.textMuted }}>{icons.lightbulb} 點擊月份直接跳轉</span>
                     </div>
 
-                    {/* 1 至 12 月份財務明細列表 */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px' }}>
                       {monthlyBreakdown.map(m => (
-                        <div 
+                        <div
                           key={m.monthStr}
                           onClick={() => {
-                            setSelectedMonth(m.monthStr);
+                            setRevenueMonth(m.monthStr);
                             setRevenueViewMode('month');
                           }}
                           style={{
                             ...cardStyle,
-                            padding: '12px 14px',
-                            marginBottom: '0',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'space-between',
-                            cursor: 'pointer',
-                            userSelect: 'none',
+                            padding: '12px 14px', marginBottom: '0',
+                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                            cursor: 'pointer', userSelect: 'none',
                             borderLeft: m.monthStr === getMonthString(realTodayStr) ? '5px solid #0071e3' : `1px solid ${theme.border}`
                           }}>
                           <div>
                             <div style={{ fontSize: '15px', fontWeight: '800', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              {m.monthNum} 月 
+                              {m.monthNum} 月
                               {m.monthStr === getMonthString(realTodayStr) && (
                                 <span style={{ fontSize: '10px', backgroundColor: '#0071e3', color: '#fff', padding: '1px 5px', borderRadius: '4px' }}>本月</span>
                               )}
@@ -1988,17 +2079,12 @@
 
             {activeTab === 'students' && (
               <div>
-                {/* 狀態一：學員詳細檔案頁面 (單擊進入) */}
                 {activeStudentDetail ? (
                   <div className="apple-fade-in">
-                    {/* 返回與標題列 */}
                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', position: 'relative' }}>
-                      <button 
-                        onClick={() => setActiveStudentDetail(null)} 
-                        style={{ 
-                          background: 'none', border: 'none', color: '#0071e3', fontSize: '15px', fontWeight: '700', 
-                          cursor: 'pointer', padding: '8px 0', display: 'flex', alignItems: 'center', zIndex: 2
-                        }}>
+                      <button
+                        onClick={() => setActiveStudentDetail(null)}
+                        style={{ background: 'none', border: 'none', color: '#0071e3', fontSize: '15px', fontWeight: '700', cursor: 'pointer', padding: '8px 0', display: 'flex', alignItems: 'center', zIndex: 2 }}>
                         ❮ 返回
                       </button>
                       <h2 style={{ position: 'absolute', width: '100%', textAlign: 'center', margin: 0, fontSize: '16px', fontWeight: '700', color: theme.textPrimary, pointerEvents: 'none' }}>
@@ -2006,7 +2092,6 @@
                       </h2>
                     </div>
 
-                    {/* 學員基本資訊卡片 */}
                     <div style={{ ...cardStyle, marginBottom: '16px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                         <div>
@@ -2017,7 +2102,7 @@
                             {activeStudentDetail.level || '新手'}
                           </span>
                         </div>
-                        <button 
+                        <button
                           onClick={() => openWhatsApp(activeStudentDetail.phone)}
                           style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
                           {icons.whatsapp} 聯絡
@@ -2033,33 +2118,32 @@
                           </span>
                         </div>
                         <div style={{ marginTop: '8px', backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', color: theme.textSecondary, fontSize: '13px' }}>
-                          <strong>備註：</strong><br/>{activeStudentDetail.notes || '無備註'}
+                          <strong>備註：</strong><br />{activeStudentDetail.notes || '無備註'}
                         </div>
                       </div>
 
                       <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-                        <button 
+                        <button
                           onClick={() => {
                             setStudentForm({ ...activeStudentDetail });
                             setShowEditStudentModal(true);
-                          }} 
+                          }}
                           style={{ flex: 1, padding: '10px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: `1px solid ${theme.border}`, borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                           {icons.edit} 修改資料
                         </button>
-                        <button 
-                          onClick={() => handleDeleteStudent(activeStudentDetail.id, activeStudentDetail.name)} 
+                        <button
+                          onClick={() => handleDeleteStudent(activeStudentDetail.id, activeStudentDetail.name)}
                           style={{ flex: 1, padding: '10px', backgroundColor: '#ff3b30', color: '#fff', border: `1px solid #ff3b30`, borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
                           {icons.trash} 刪除學員
                         </button>
                       </div>
                     </div>
 
-                    {/* 上堂歷史清單 */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: theme.textPrimary }}>歷史上堂紀錄</h3>
                       <span style={{ fontSize: '11px', color: theme.textMuted }}>{icons.lightbulb} 點擊課堂即可修改</span>
                     </div>
-                    
+
                     <div style={{ ...cardStyle, padding: 0, overflow: 'hidden' }}>
                       {(() => {
                         const studentLessons = schedule
@@ -2085,8 +2169,8 @@
                                   const stData = (lesson.enrolledStudents || []).find(st => st.name === activeStudentDetail.name);
                                   const isPaid = stData && stData.isPaid;
                                   return (
-                                    <tr 
-                                      key={lesson.id} 
+                                    <tr
+                                      key={lesson.id}
                                       onClick={() => setSelectedLessonModal(lesson)}
                                       style={{ borderBottom: `1px solid ${theme.border}`, cursor: 'pointer' }}>
                                       <td style={{ padding: '10px 8px', verticalAlign: 'top' }}>
@@ -2098,16 +2182,16 @@
                                         <div style={{ fontSize: '10px', color: theme.textMuted }}>{lesson.court}</div>
                                       </td>
                                       <td style={{ padding: '10px 8px', textAlign: 'right', verticalAlign: 'top' }}>
-                                        <span style={{ 
+                                        <span style={{
                                           fontSize: '10px', fontWeight: '700', padding: '3px 8px', borderRadius: '6px', display: 'inline-block',
-                                          backgroundColor: isPaid ? (isDarkMode ? '#1b3320' : '#eaf8ec') : (isDarkMode ? '#3b2511' : '#fef3e5'), 
-                                          color: isPaid ? '#34c759' : '#ff9500' 
+                                          backgroundColor: isPaid ? (isDarkMode ? '#1b3320' : '#eaf8ec') : (isDarkMode ? '#3b2511' : '#fef3e5'),
+                                          color: isPaid ? '#34c759' : '#ff9500'
                                         }}>
                                           {isPaid ? '已付' : '欠款'}
                                         </span>
                                       </td>
                                     </tr>
-                                  )
+                                  );
                                 })}
                               </tbody>
                             </table>
@@ -2117,9 +2201,8 @@
                     </div>
                   </div>
                 ) : (
-                  /* 狀態二：學員列表主頁面 */
                   <div className="apple-fade-in">
-                    <button 
+                    <button
                       onClick={() => {
                         setStudentForm({ id: null, name: '', phone: '', level: '新手', notes: '' });
                         setShowAddStudentModal(true);
@@ -2130,19 +2213,18 @@
 
                     <div style={{ position: 'relative', marginBottom: '14px' }}>
                       <span style={{ position: 'absolute', left: '12px', top: '12px', color: theme.textMuted }}>{icons.search}</span>
-                      <input 
-                        placeholder="搜尋學員姓名..." 
-                        value={searchQuery} 
-                        onChange={e => setSearchQuery(e.target.value)} 
-                        style={{ ...inputStyle, paddingLeft: '36px', paddingRight: '14px' }} 
+                      <input
+                        placeholder="搜尋學員姓名..."
+                        value={searchQuery}
+                        onChange={e => setSearchQuery(e.target.value)}
+                        style={{ ...inputStyle, paddingLeft: '36px', paddingRight: '14px' }}
                       />
                     </div>
 
-                    {/* 取代篩選按鈕的排序功能 */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <span style={{ fontSize: '13px', color: theme.textSecondary, fontWeight: '700' }}>排序方式：</span>
-                      <select 
-                        value={studentSort} 
+                      <select
+                        value={studentSort}
                         onChange={(e) => setStudentSort(e.target.value)}
                         style={{ padding: '6px 12px', fontSize: '13px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, fontWeight: '600', outline: 'none' }}
                       >
@@ -2157,27 +2239,22 @@
                       {icons.lightbulb} 按一下卡片即可進入學員檔案詳情
                     </div>
 
-                    {/* 篩選與渲染列表 */}
                     {(() => {
                       let enrichedStudents = students.map(s => {
                         const studentLessons = schedule
                           .filter(l => (l.enrolledStudents || []).some(st => st.name === s.name))
                           .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || timeToMinutes(b.startTime || b.time) - timeToMinutes(a.startTime || a.time));
-                        
+
                         const pastLessons = studentLessons.filter(l => (l.date || '') <= realTodayStr);
                         const count = pastLessons.length;
                         const lastLesson = pastLessons.length > 0 ? pastLessons[0] : null;
                         const lastLessonDate = lastLesson ? (lastLesson.date || '無紀錄') : '無紀錄';
-                        
+
                         let hasUnpaid = false;
                         for (let l of pastLessons) {
                           const stData = (l.enrolledStudents || []).find(x => x.name === s.name);
-                          if (stData && !stData.isPaid) {
-                            hasUnpaid = true;
-                            break;
-                          }
+                          if (stData && !stData.isPaid) { hasUnpaid = true; break; }
                         }
-
                         return { ...s, count, lastLessonDate, hasUnpaid };
                       });
 
@@ -2205,42 +2282,40 @@
                         return <div style={{ textAlign: 'center', padding: '30px', color: theme.textMuted, fontSize: '14px' }}>沒有符合條件的學員</div>;
                       }
 
-                      return enrichedStudents.map(s => {
-                        return (
-                          <div 
-                            key={s.id} 
-                            onClick={() => setActiveStudentDetail(s)}
-                            style={{ 
-                              ...cardStyle, 
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-                              cursor: 'pointer', userSelect: 'none', marginBottom: '12px', padding: '16px',
-                              borderLeft: s.hasUnpaid ? '5px solid #ff9500' : `1px solid ${theme.border}`
-                            }}>
-                            <div>
-                              <strong style={{ fontSize: '16px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                {icons.user} {s.name}
-                              </strong>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
-                                <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
-                                  {s.level || '新手'}
+                      return enrichedStudents.map(s => (
+                        <div
+                          key={s.id}
+                          onClick={() => setActiveStudentDetail(s)}
+                          style={{
+                            ...cardStyle,
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            cursor: 'pointer', userSelect: 'none', marginBottom: '12px', padding: '16px',
+                            borderLeft: s.hasUnpaid ? '5px solid #ff9500' : `1px solid ${theme.border}`
+                          }}>
+                          <div>
+                            <strong style={{ fontSize: '16px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {icons.user} {s.name}
+                            </strong>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                              <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
+                                {s.level || '新手'}
+                              </span>
+                              <span style={{ fontSize: '11px', color: '#34c759', backgroundColor: isDarkMode ? '#1b3320' : '#eaf8ec', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
+                                已上: {s.count} 堂
+                              </span>
+                              <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
+                                最後上課: {s.lastLessonDate}
+                              </span>
+                              {s.hasUnpaid && (
+                                <span style={{ fontSize: '11px', color: '#ff9500', backgroundColor: isDarkMode ? '#3b2511' : '#fef3e5', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
+                                  有欠款
                                 </span>
-                                <span style={{ fontSize: '11px', color: '#34c759', backgroundColor: isDarkMode ? '#1b3320' : '#eaf8ec', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
-                                  已上: {s.count} 堂
-                                </span>
-                                <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
-                                  最後上課: {s.lastLessonDate}
-                                </span>
-                                {s.hasUnpaid && (
-                                  <span style={{ fontSize: '11px', color: '#ff9500', backgroundColor: isDarkMode ? '#3b2511' : '#fef3e5', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
-                                    有欠款
-                                  </span>
-                                )}
-                              </div>
+                              )}
                             </div>
-                            <span style={{ fontSize: '16px', color: theme.textMuted, paddingLeft: '8px' }}>❯</span>
                           </div>
-                        );
-                      });
+                          <span style={{ fontSize: '16px', color: theme.textMuted, paddingLeft: '8px' }}>❯</span>
+                        </div>
+                      ));
                     })()}
                   </div>
                 )}
@@ -2254,7 +2329,7 @@
                   <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {icons.lightbulb} 管理場地費代墊人員與預設選項
                   </div>
-                  
+
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
                     {courtPayers.map(payer => (
                       <div key={payer} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: payer === '待定' ? (isDarkMode ? '#3b2811' : '#fff8e1') : theme.inputBg, color: payer === '待定' ? '#ff9500' : theme.textPrimary, padding: '6px 12px', borderRadius: '16px', fontSize: '13px', fontWeight: '600' }}>
@@ -2267,14 +2342,14 @@
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <input 
-                      placeholder="輸入新墊支人姓名..." 
-                      value={newPayerInput} 
-                      onChange={e => setNewPayerInput(e.target.value)} 
-                      style={{ ...inputStyle, flex: 1 }} 
+                    <input
+                      placeholder="輸入新墊支人姓名..."
+                      value={newPayerInput}
+                      onChange={e => setNewPayerInput(e.target.value)}
+                      style={{ ...inputStyle, flex: 1 }}
                     />
-                    <button 
-                      onClick={handleAddCourtPayer} 
+                    <button
+                      onClick={handleAddCourtPayer}
                       style={{ padding: '0 16px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
                       新增
                     </button>
@@ -2286,7 +2361,7 @@
                   <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {icons.lightbulb} 設定常用課程類型與預設收費標準
                   </div>
-                  
+
                   {courseTypes.map(c => (
                     <div key={c.id} style={{ padding: '12px 0', borderBottom: `1px solid ${theme.border}`, fontSize: '13px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
@@ -2317,30 +2392,30 @@
                       {editingCourseTypeId ? '修改預設課程：' : '新增預設課程：'}
                     </div>
 
-                    <input placeholder="預設課程名稱 (例: 2-4人小班)" value={courseTypeForm.name} onChange={e => setCourseTypeForm({...courseTypeForm, name: e.target.value})} required style={inputStyle} />
+                    <input placeholder="預設課程名稱 (例: 2-4人小班)" value={courseTypeForm.name} onChange={e => setCourseTypeForm({ ...courseTypeForm, name: e.target.value })} required style={inputStyle} />
 
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <div style={{ flex: 1.2, minWidth: 0 }}>
                         <label style={{ fontSize: '11px', color: theme.textSecondary }}>計費模式</label>
-                        <select value={courseTypeForm.feeMode} onChange={e => setCourseTypeForm({...courseTypeForm, feeMode: e.target.value})} style={inputStyle}>
+                        <select value={courseTypeForm.feeMode} onChange={e => setCourseTypeForm({ ...courseTypeForm, feeMode: e.target.value })} style={inputStyle}>
                           <option value="per_person" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按每人收費</option>
                           <option value="per_lesson" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按整堂收費</option>
                         </select>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <label style={{ fontSize: '11px', color: theme.textSecondary }}>人數上限</label>
-                        <input type="number" min="1" placeholder="人數" value={courseTypeForm.maxCapacity} onChange={e => setCourseTypeForm({...courseTypeForm, maxCapacity: e.target.value})} required style={inputStyle} />
+                        <input type="number" min="1" placeholder="人數" value={courseTypeForm.maxCapacity} onChange={e => setCourseTypeForm({ ...courseTypeForm, maxCapacity: e.target.value })} required style={inputStyle} />
                       </div>
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <label style={{ fontSize: '11px', color: theme.textSecondary }}>預設課堂費(HK$)</label>
-                        <input type="number" placeholder="課堂費" value={courseTypeForm.defaultCoachFee} onChange={e => setCourseTypeForm({...courseTypeForm, defaultCoachFee: e.target.value})} required style={inputStyle} />
+                        <input type="number" placeholder="課堂費" value={courseTypeForm.defaultCoachFee} onChange={e => setCourseTypeForm({ ...courseTypeForm, defaultCoachFee: e.target.value })} required style={inputStyle} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <label style={{ fontSize: '11px', color: theme.textSecondary }}>預設場地費(HK$)</label>
-                        <input type="number" placeholder="場地費" value={courseTypeForm.defaultCourtFee} onChange={e => setCourseTypeForm({...courseTypeForm, defaultCourtFee: e.target.value})} style={inputStyle} />
+                        <input type="number" placeholder="場地費" value={courseTypeForm.defaultCourtFee} onChange={e => setCourseTypeForm({ ...courseTypeForm, defaultCourtFee: e.target.value })} style={inputStyle} />
                       </div>
                     </div>
 
@@ -2374,27 +2449,27 @@
           </div>
 
           {showAddStudentModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
+            <div role="dialog" aria-modal="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
               <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
                   <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>新增學員</h3>
-                  <button onClick={() => setShowAddStudentModal(false)} style={closeButtonStyle}>{icons.close}</button>
+                  <button onClick={() => setShowAddStudentModal(false)} style={closeButtonStyle} aria-label="關閉">{icons.close}</button>
                 </div>
 
                 <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>姓名</label>
-                    <input placeholder="輸入學員姓名" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                    <input placeholder="輸入學員姓名" value={studentForm.name} onChange={e => setStudentForm({ ...studentForm, name: e.target.value })} required style={{ ...inputStyle, marginTop: '4px' }} />
                   </div>
-                  
+
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>電話</label>
-                      <input placeholder="例: 91234567" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input placeholder="例: 91234567" value={studentForm.phone} onChange={e => setStudentForm({ ...studentForm, phone: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>程度</label>
-                      <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }}>
+                      <select value={studentForm.level} onChange={e => setStudentForm({ ...studentForm, level: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }}>
                         <option value="新手" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新手</option>
                         <option value="近初" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>近初</option>
                         <option value="初級" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>初級</option>
@@ -2406,11 +2481,11 @@
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>備註</label>
-                    <textarea 
-                      placeholder="備註..." 
-                      value={studentForm.notes} 
-                      onChange={e => setStudentForm({...studentForm, notes: e.target.value})} 
-                      style={{ ...inputStyle, height: '80px', marginTop: '4px' }} 
+                    <textarea
+                      placeholder="備註..."
+                      value={studentForm.notes}
+                      onChange={e => setStudentForm({ ...studentForm, notes: e.target.value })}
+                      style={{ ...inputStyle, height: '80px', marginTop: '4px' }}
                     />
                   </div>
 
@@ -2428,27 +2503,27 @@
           )}
 
           {showEditStudentModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2300, padding: '16px' }}>
+            <div role="dialog" aria-modal="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2300, padding: '16px' }}>
               <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
                   <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>修改學員資料</h3>
-                  <button onClick={() => setShowEditStudentModal(false)} style={closeButtonStyle}>{icons.close}</button>
+                  <button onClick={() => setShowEditStudentModal(false)} style={closeButtonStyle} aria-label="關閉">{icons.close}</button>
                 </div>
 
                 <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>姓名</label>
-                    <input placeholder="學員姓名" value={studentForm.name} onChange={e => setStudentForm({...studentForm, name: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                    <input placeholder="學員姓名" value={studentForm.name} onChange={e => setStudentForm({ ...studentForm, name: e.target.value })} required style={{ ...inputStyle, marginTop: '4px' }} />
                   </div>
-                  
+
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>電話</label>
-                      <input placeholder="電話" value={studentForm.phone} onChange={e => setStudentForm({...studentForm, phone: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input placeholder="電話" value={studentForm.phone} onChange={e => setStudentForm({ ...studentForm, phone: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>程度</label>
-                      <select value={studentForm.level} onChange={e => setStudentForm({...studentForm, level: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }}>
+                      <select value={studentForm.level} onChange={e => setStudentForm({ ...studentForm, level: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }}>
                         <option value="新手" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新手</option>
                         <option value="近初" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>近初</option>
                         <option value="初級" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>初級</option>
@@ -2460,11 +2535,11 @@
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>備註</label>
-                    <textarea 
-                      placeholder="備註" 
-                      value={studentForm.notes} 
-                      onChange={e => setStudentForm({...studentForm, notes: e.target.value})} 
-                      style={{ ...inputStyle, height: '80px', marginTop: '4px' }} 
+                    <textarea
+                      placeholder="備註"
+                      value={studentForm.notes}
+                      onChange={e => setStudentForm({ ...studentForm, notes: e.target.value })}
+                      style={{ ...inputStyle, height: '80px', marginTop: '4px' }}
                     />
                   </div>
 
@@ -2481,25 +2556,24 @@
             </div>
           )}
 
-          {/* 新增課堂 Modal：已修復日期與時間欄位超出範圍的問題 */}
           {showAddModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
+            <div role="dialog" aria-modal="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
               <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
                   <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>新增課堂</h3>
-                  <button onClick={() => setShowAddModal(false)} style={closeButtonStyle}>{icons.close}</button>
+                  <button onClick={() => setShowAddModal(false)} style={closeButtonStyle} aria-label="關閉">{icons.close}</button>
                 </div>
 
                 <form onSubmit={handleSaveLesson} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>選擇預設課程</label>
-                    <select 
-                      value={lessonForm.courseTypeId} 
+                    <select
+                      value={lessonForm.courseTypeId}
                       onChange={e => {
                         const selected = courseTypes.find(c => c.id === e.target.value);
                         if (selected) {
-                          setLessonForm({ 
-                            ...lessonForm, 
+                          setLessonForm({
+                            ...lessonForm,
                             courseTypeId: selected.id,
                             courseName: selected.name,
                             maxCapacity: selected.maxCapacity,
@@ -2508,7 +2582,7 @@
                             courtFee: selected.defaultCourtFee
                           });
                         }
-                      }} 
+                      }}
                       style={{ ...inputStyle, marginTop: '4px' }}>
                       {courseTypes.map(c => (
                         <option key={c.id} value={c.id} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>
@@ -2521,20 +2595,20 @@
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.5, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課程名稱</label>
-                      <input type="text" value={lessonForm.courseName} onChange={e => setLessonForm({...lessonForm, courseName: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
+                      <input type="text" value={lessonForm.courseName} onChange={e => setLessonForm({ ...lessonForm, courseName: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>人數上限</label>
-                      <input type="number" min="1" value={lessonForm.maxCapacity} onChange={e => setLessonForm({...lessonForm, maxCapacity: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
+                      <input type="number" min="1" value={lessonForm.maxCapacity} onChange={e => setLessonForm({ ...lessonForm, maxCapacity: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.2, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>計費模式</label>
-                      <select 
-                        value={lessonForm.feeMode} 
-                        onChange={e => setLessonForm({...lessonForm, feeMode: e.target.value})} 
+                      <select
+                        value={lessonForm.feeMode}
+                        onChange={e => setLessonForm({ ...lessonForm, feeMode: e.target.value })}
                         style={{ ...inputStyle, marginTop: '4px' }}>
                         <option value="per_person" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按每人收費</option>
                         <option value="per_lesson" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按整堂收費</option>
@@ -2542,16 +2616,16 @@
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課堂費 (HK$)</label>
-                      <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
+                      <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({ ...lessonForm, coachFee: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.2, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
-                      <select 
-                        value={lessonForm.courtPayer} 
-                        onChange={e => setLessonForm({...lessonForm, courtPayer: e.target.value})} 
+                      <select
+                        value={lessonForm.courtPayer}
+                        onChange={e => setLessonForm({ ...lessonForm, courtPayer: e.target.value })}
                         style={{ ...inputStyle, marginTop: '4px', marginBottom: lessonForm.courtPayer === '__CUSTOM__' ? '6px' : '0' }}>
                         {courtPayers.map(p => (
                           <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
@@ -2561,44 +2635,41 @@
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費 (HK$)</label>
-                      <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
+                      <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({ ...lessonForm, courtFee: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
                   {lessonForm.courtPayer === '__CUSTOM__' && (
-                    <input 
-                      placeholder="請輸入新墊支人姓名" 
-                      value={lessonForm.customCourtPayer} 
-                      onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value})} 
+                    <input
+                      placeholder="請輸入新墊支人姓名"
+                      value={lessonForm.customCourtPayer}
+                      onChange={e => setLessonForm({ ...lessonForm, customCourtPayer: e.target.value })}
                       style={{ ...inputStyle, marginTop: '-4px', marginBottom: '4px' }}
-                      required 
+                      required
                     />
                   )}
 
-                  {/* 日期欄位：加入 width: '100%' 與 box-sizing 嚴格限制防溢出 */}
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
                     <input type="date" value={lessonForm.date} onChange={e => {
-                      setLessonForm({...lessonForm, date: e.target.value});
+                      setLessonForm({ ...lessonForm, date: e.target.value });
                       selectDate(e.target.value);
                     }} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
-                  {/* 開始與結束時間：加入 minWidth: 0 與 width: 100% 確保不超出範圍 */}
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
-                    </div>
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
+                    <input type="time" value={lessonForm.startTime} onChange={e => handleStartTimeChange(e.target.value)} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
+                    <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({ ...lessonForm, endTime: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>球場地點</label>
-                    <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({...lessonForm, court: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} />
+                    <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({ ...lessonForm, court: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} />
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
@@ -2615,31 +2686,31 @@
           )}
 
           {showEditModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '16px' }}>
+            <div role="dialog" aria-modal="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2100, padding: '16px' }}>
               <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
                   <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>修改課堂</h3>
-                  <button onClick={() => setShowEditModal(false)} style={closeButtonStyle}>{icons.close}</button>
+                  <button onClick={() => setShowEditModal(false)} style={closeButtonStyle} aria-label="關閉">{icons.close}</button>
                 </div>
 
                 <form onSubmit={handleSaveLesson} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.5, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課程名稱</label>
-                      <input type="text" value={lessonForm.courseName} onChange={e => setLessonForm({...lessonForm, courseName: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
+                      <input type="text" value={lessonForm.courseName} onChange={e => setLessonForm({ ...lessonForm, courseName: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>人數上限</label>
-                      <input type="number" min="1" value={lessonForm.maxCapacity} onChange={e => setLessonForm({...lessonForm, maxCapacity: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
+                      <input type="number" min="1" value={lessonForm.maxCapacity} onChange={e => setLessonForm({ ...lessonForm, maxCapacity: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.2, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>計費模式</label>
-                      <select 
-                        value={lessonForm.feeMode} 
-                        onChange={e => setLessonForm({...lessonForm, feeMode: e.target.value})} 
+                      <select
+                        value={lessonForm.feeMode}
+                        onChange={e => setLessonForm({ ...lessonForm, feeMode: e.target.value })}
                         style={{ ...inputStyle, marginTop: '4px' }}>
                         <option value="per_person" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按每人收費</option>
                         <option value="per_lesson" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>按整堂收費</option>
@@ -2647,23 +2718,23 @@
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>課堂費 (HK$)</label>
-                      <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({...lessonForm, coachFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
+                      <input type="number" value={lessonForm.coachFee} onChange={e => setLessonForm({ ...lessonForm, coachFee: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1.2, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費墊支人</label>
-                      <select 
-                        value={courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : '__CUSTOM__'} 
+                      <select
+                        value={courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : '__CUSTOM__'}
                         onChange={e => {
                           const val = e.target.value;
                           setLessonForm({
-                            ...lessonForm, 
+                            ...lessonForm,
                             courtPayer: val,
                             customCourtPayer: val === '__CUSTOM__' && !courtPayers.includes(lessonForm.courtPayer) ? lessonForm.courtPayer : ''
                           });
-                        }} 
+                        }}
                         style={{ ...inputStyle, marginTop: '4px' }}>
                         {courtPayers.map(p => (
                           <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
@@ -2673,39 +2744,38 @@
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>場地費 (HK$)</label>
-                      <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({...lessonForm, courtFee: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} required />
+                      <input type="number" value={lessonForm.courtFee} onChange={e => setLessonForm({ ...lessonForm, courtFee: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} required />
                     </div>
                   </div>
 
                   {(lessonForm.courtPayer === '__CUSTOM__' || !courtPayers.includes(lessonForm.courtPayer)) && (
-                    <input 
-                      placeholder="請輸入新墊支人姓名" 
-                      value={lessonForm.customCourtPayer || (courtPayers.includes(lessonForm.courtPayer) ? '' : lessonForm.courtPayer)} 
-                      onChange={e => setLessonForm({...lessonForm, customCourtPayer: e.target.value, courtPayer: '__CUSTOM__'})} 
+                    <input
+                      placeholder="請輸入新墊支人姓名"
+                      value={lessonForm.customCourtPayer || (courtPayers.includes(lessonForm.courtPayer) ? '' : lessonForm.courtPayer)}
+                      onChange={e => setLessonForm({ ...lessonForm, customCourtPayer: e.target.value, courtPayer: '__CUSTOM__' })}
                       style={{ ...inputStyle, marginTop: '-4px', marginBottom: '4px' }}
-                      required 
+                      required
                     />
                   )}
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
-                    <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                    <input type="date" value={lessonForm.date} onChange={e => setLessonForm({ ...lessonForm, date: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
-                    </div>
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
+                    <input type="time" value={lessonForm.startTime} onChange={e => handleStartTimeChange(e.target.value)} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
+                    <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({ ...lessonForm, endTime: e.target.value })} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>球場地點</label>
-                    <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({...lessonForm, court: e.target.value})} style={{ ...inputStyle, marginTop: '4px' }} />
+                    <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({ ...lessonForm, court: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} />
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
@@ -2722,12 +2792,11 @@
           )}
 
           {selectedLessonModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
+            <div role="dialog" aria-modal="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
               <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
-                
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
                   <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.shuttlecock} {selectedLessonModal.courseName} 詳情</h3>
-                  <button onClick={() => setSelectedLessonModal(null)} style={closeButtonStyle}>{icons.close}</button>
+                  <button onClick={() => setSelectedLessonModal(null)} style={closeButtonStyle} aria-label="關閉">{icons.close}</button>
                 </div>
 
                 <div style={{ fontSize: '13px', color: theme.textSecondary, lineHeight: '1.6', marginBottom: '14px' }}>
@@ -2746,25 +2815,25 @@
                     <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.textPrimary }}>
                       學員名單 ({(selectedLessonModal.enrolledStudents || []).length} / {selectedLessonModal.maxCapacity}人)
                     </h4>
-                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 雙擊學員列可直接修改</span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 點擊學員列可直接修改</span>
                   </div>
-                  
+
                   {(selectedLessonModal.enrolledStudents || []).length === 0 ? (
                     <div style={{ fontSize: '13px', color: theme.textMuted, marginBottom: '8px' }}>尚無學員報名</div>
                   ) : (
                     (selectedLessonModal.enrolledStudents || []).map((st, idx) => (
-                      <div 
-                        key={idx} 
-                        onDoubleClick={() => {
+                      <div
+                        key={idx}
+                        onClick={() => {
                           const s = students.find(x => x.name === st.name);
-                          if(s) {
+                          if (s) {
                             setStudentForm({ ...s });
                             setShowEditStudentModal(true);
                           }
                         }}
-                        style={{ 
+                        style={{
                           display: 'flex', flexDirection: 'column', gap: '6px',
-                          backgroundColor: theme.cardBg, padding: '10px 12px', borderRadius: '12px', 
+                          backgroundColor: theme.cardBg, padding: '10px 12px', borderRadius: '12px',
                           marginBottom: '8px', fontSize: '13px', border: `1px solid ${theme.border}`,
                           cursor: 'pointer', userSelect: 'none', color: theme.textPrimary
                         }}>
@@ -2779,13 +2848,13 @@
                             </span>
                           </div>
                           <div style={{ display: 'flex', gap: '6px' }}>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleTogglePaidStatus(st.name); }} 
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleTogglePaidStatus(st.name); }}
                               style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '8px', border: 'none', backgroundColor: st.isPaid ? '#ff9500' : '#34c759', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>
                               {st.isPaid ? '設未付' : '設已付'}
                             </button>
-                            <button 
-                              onClick={(e) => { e.stopPropagation(); handleRemoveStudentFromLesson(st.name); }} 
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRemoveStudentFromLesson(st.name); }}
                               style={{ padding: '4px 8px', fontSize: '11px', borderRadius: '8px', border: 'none', backgroundColor: '#ff3b30', color: '#fff', fontWeight: '700', cursor: 'pointer' }}>
                               移除
                             </button>
@@ -2794,10 +2863,10 @@
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', color: theme.textSecondary }}>
                           <span>收款方式:</span>
-                          <select 
-                            value={st.payMethod || 'FPS'} 
+                          <select
+                            value={st.payMethod || 'FPS'}
                             onClick={e => e.stopPropagation()}
-                            onChange={e => handleUpdatePayMethod(st.name, e.target.value)} 
+                            onChange={e => handleUpdatePayMethod(st.name, e.target.value)}
                             style={{ padding: '3px 6px', fontSize: '12px', borderRadius: '6px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText }}>
                             <option value="FPS" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>FPS (轉數快)</option>
                             <option value="PayMe" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>PayMe</option>
@@ -2812,12 +2881,12 @@
                   {(selectedLessonModal.enrolledStudents || []).length < selectedLessonModal.maxCapacity ? (
                     <div style={{ marginTop: '12px', borderTop: `1px dashed ${theme.border}`, paddingTop: '10px' }}>
                       <div style={{ fontSize: '13px', fontWeight: '700', marginBottom: '6px', color: theme.textPrimary }}>加入學員至此班課：</div>
-                      <select 
-                        value={addStudentSelect} 
-                        onChange={e => { 
-                          setAddStudentSelect(e.target.value); 
-                          if (e.target.value !== '__CUSTOM__') setAddStudentCustom(''); 
-                        }} 
+                      <select
+                        value={addStudentSelect}
+                        onChange={e => {
+                          setAddStudentSelect(e.target.value);
+                          if (e.target.value !== '__CUSTOM__') setAddStudentCustom('');
+                        }}
                         style={{ ...inputStyle, fontSize: '13px', marginBottom: addStudentSelect === '__CUSTOM__' ? '8px' : '0' }}>
                         <option value="" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>-- 從已登記學員中選擇 --</option>
                         {students.map(s => <option key={s.id} value={s.name} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{s.name}</option>)}
@@ -2825,17 +2894,17 @@
                       </select>
 
                       {addStudentSelect === '__CUSTOM__' && (
-                        <input 
-                          placeholder="請輸入新學員姓名..." 
-                          value={addStudentCustom} 
-                          onChange={e => setAddStudentCustom(e.target.value)} 
-                          style={{ ...inputStyle, fontSize: '13px', marginBottom: '8px' }} 
+                        <input
+                          placeholder="請輸入新學員姓名..."
+                          value={addStudentCustom}
+                          onChange={e => setAddStudentCustom(e.target.value)}
+                          style={{ ...inputStyle, fontSize: '13px', marginBottom: '8px' }}
                           required
                         />
                       )}
 
-                      <button 
-                        onClick={handleAddStudentToLesson} 
+                      <button
+                        onClick={handleAddStudentToLesson}
                         style={{ width: '100%', padding: '10px', marginTop: '8px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
                         加入此課堂
                       </button>
@@ -2846,12 +2915,12 @@
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <button 
-                    onClick={() => handleOpenRenewModal(selectedLessonModal)} 
+                  <button
+                    onClick={() => handleOpenRenewModal(selectedLessonModal)}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
                     {icons.refresh} 續堂 (可選時間)
                   </button>
-                  <button 
+                  <button
                     onClick={() => {
                       setLessonForm({
                         id: selectedLessonModal.id,
@@ -2869,74 +2938,72 @@
                         court: selectedLessonModal.court
                       });
                       setShowEditModal(true);
-                    }} 
+                    }}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
                     {icons.edit} 修改課堂
                   </button>
                 </div>
-
               </div>
             </div>
           )}
 
           {showRenewModal && (
-            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2150, padding: '16px' }}>
+            <div role="dialog" aria-modal="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2150, padding: '16px' }}>
               <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
                   <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>{icons.refresh} 續堂安排</h3>
-                  <button onClick={() => setShowRenewModal(false)} style={closeButtonStyle}>{icons.close}</button>
+                  <button onClick={() => setShowRenewModal(false)} style={closeButtonStyle} aria-label="關閉">{icons.close}</button>
                 </div>
 
                 <form onSubmit={handleConfirmRenewLesson} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>續堂日期</label>
-                    <input 
-                      type="date" 
-                      value={renewForm.date} 
-                      onChange={e => setRenewForm({ ...renewForm, date: e.target.value })} 
-                      required 
-                      style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} 
+                    <input
+                      type="date"
+                      value={renewForm.date}
+                      onChange={e => setRenewForm({ ...renewForm, date: e.target.value })}
+                      required
+                      style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }}
                     />
                   </div>
 
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>開始時間</label>
-                      <input 
-                        type="time" 
-                        value={renewForm.startTime} 
-                        onChange={e => setRenewForm({ ...renewForm, startTime: e.target.value })} 
-                        required 
-                        style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} 
-                      />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>結束時間</label>
-                      <input 
-                        type="time" 
-                        value={renewForm.endTime} 
-                        onChange={e => setRenewForm({ ...renewForm, endTime: e.target.value })} 
-                        required 
-                        style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} 
-                      />
-                    </div>
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>開始時間</label>
+                    <input
+                      type="time"
+                      value={renewForm.startTime}
+                      onChange={e => setRenewForm({ ...renewForm, startTime: e.target.value })}
+                      required
+                      style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>結束時間</label>
+                    <input
+                      type="time"
+                      value={renewForm.endTime}
+                      onChange={e => setRenewForm({ ...renewForm, endTime: e.target.value })}
+                      required
+                      style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }}
+                    />
                   </div>
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>球場地點</label>
-                    <input 
-                      placeholder="球場地點" 
-                      value={renewForm.court} 
-                      onChange={e => setRenewForm({ ...renewForm, court: e.target.value })} 
-                      style={{ ...inputStyle, marginTop: '4px' }} 
+                    <input
+                      placeholder="球場地點"
+                      value={renewForm.court}
+                      onChange={e => setRenewForm({ ...renewForm, court: e.target.value })}
+                      style={{ ...inputStyle, marginTop: '4px' }}
                     />
                   </div>
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '700' }}>場地費墊支人</label>
-                    <select 
-                      value={renewForm.courtPayer} 
-                      onChange={e => setRenewForm({ ...renewForm, courtPayer: e.target.value })} 
+                    <select
+                      value={renewForm.courtPayer}
+                      onChange={e => setRenewForm({ ...renewForm, courtPayer: e.target.value })}
                       style={{ ...inputStyle, marginTop: '4px' }}>
                       {courtPayers.map(p => (
                         <option key={p} value={p} style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>{p}</option>
@@ -2945,10 +3012,10 @@
                   </div>
 
                   <div style={{ backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => setRenewForm({ ...renewForm, keepStudents: !renewForm.keepStudents })}>
-                    <input 
-                      type="checkbox" 
-                      checked={renewForm.keepStudents} 
-                      onChange={e => setRenewForm({ ...renewForm, keepStudents: e.target.checked })} 
+                    <input
+                      type="checkbox"
+                      checked={renewForm.keepStudents}
+                      onChange={e => setRenewForm({ ...renewForm, keepStudents: e.target.checked })}
                       style={{ cursor: 'pointer', width: '16px', height: '16px' }}
                     />
                     <label style={{ fontSize: '13px', color: theme.textPrimary, cursor: 'pointer', userSelect: 'none', fontWeight: '600' }}>
@@ -2969,18 +3036,17 @@
             </div>
           )}
 
-          <nav 
+          <nav
             ref={navContainerRef}
-            style={{ 
-              position: 'fixed', bottom: 0, left: 0, right: 0, 
+            style={{
+              position: 'fixed', bottom: 0, left: 0, right: 0,
               backgroundColor: isDarkMode ? 'rgba(30, 30, 30, 0.85)' : 'rgba(255, 255, 255, 0.88)',
               backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)',
-              borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`, 
+              borderTop: `1px solid ${isDarkMode ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'}`,
               display: 'flex', justifyContent: 'space-around', alignItems: 'center',
-              paddingTop: '8px', paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 12px))', 
-              zIndex: 1000, maxWidth: '480px', margin: '0 auto', boxSizing: 'border-box' 
+              paddingTop: '8px', paddingBottom: 'calc(8px + env(safe-area-inset-bottom, 12px))',
+              zIndex: 1000, maxWidth: '480px', margin: '0 auto', boxSizing: 'border-box'
             }}>
-            
             <div style={{
               position: 'absolute',
               top: '8px',
@@ -2998,16 +3064,16 @@
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
-                <button 
+                <button
                   key={tab.id}
                   ref={el => tabRefs.current[tab.id] = el}
-                  onClick={() => setActiveTab(tab.id)} 
-                  style={{ 
+                  onClick={() => setActiveTab(tab.id)}
+                  style={{
                     flex: 1,
-                    border: 'none', backgroundColor: 'transparent', 
-                    color: isActive ? '#0071e3' : theme.textMuted, 
+                    border: 'none', backgroundColor: 'transparent',
+                    color: isActive ? '#0071e3' : theme.textMuted,
                     fontSize: '11px', fontWeight: isActive ? '700' : '500',
-                    cursor: 'pointer', display: 'flex', flexDirection: 'column', 
+                    cursor: 'pointer', display: 'flex', flexDirection: 'column',
                     alignItems: 'center', gap: '3px', position: 'relative', zIndex: 2,
                     padding: '6px 0',
                     transition: 'color 0.3s'
@@ -3029,7 +3095,11 @@
     }
 
     const root = ReactDOM.createRoot(document.getElementById('root'));
-    root.render(<BadmintonCoachApp />);
+    root.render(
+      <ErrorBoundary>
+        <BadmintonCoachApp />
+      </ErrorBoundary>
+    );
   </script>
 </body>
 </html>
