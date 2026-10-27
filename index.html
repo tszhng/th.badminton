@@ -53,8 +53,8 @@
     const { useState, useEffect, useRef, useLayoutEffect } = React;
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.8.5";
-      const LAST_UPDATED = "2026-10-26 17:30";
+      const APP_VERSION = "v4.8.6";
+      const LAST_UPDATED = "2026-10-26 18:10";
 
       const [isDarkMode, setIsDarkMode] = useState(() => {
         const saved = localStorage.getItem('th_badminton_darkMode');
@@ -955,7 +955,6 @@
         if (studentForm.id) {
           setStudents(students.map(s => s.id === studentForm.id ? { ...studentForm } : s));
           setShowEditStudentModal(false);
-          // 若在詳情頁面修改，同步更新 activeStudentDetail 資料
           if (activeStudentDetail && activeStudentDetail.id === studentForm.id) {
             setActiveStudentDetail({ ...studentForm });
           }
@@ -1029,8 +1028,6 @@
         };
         reader.readAsText(file);
       };
-
-      const sortedStudents = [...students].sort((a, b) => a.name.localeCompare(b.name, 'zh-HK'));
 
       const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '10px', border: `1px solid ${theme.inputBorder}`, backgroundColor: theme.inputBg, color: theme.inputText, boxSizing: 'border-box', fontSize: '14px', outline: 'none' };
       const cardStyle = { backgroundColor: theme.cardBg, color: theme.textPrimary, padding: '16px', borderRadius: '24px', marginBottom: '16px', boxSizing: 'border-box', width: '100%', boxShadow: theme.shadow, border: `1px solid ${theme.border}` };
@@ -1209,7 +1206,7 @@
                 } else if (isWithin7Days) {
                   bgColor = isDarkMode ? '#241b12' : '#fdf8f2';
                   textColor = isDarkMode ? '#f6ad55' : '#b45309';
-                  borderColor = '#f6ad55';
+                  borderColor = '#d97706';
                 }
 
                 return (
@@ -2162,7 +2159,6 @@
 
                     {/* 篩選與渲染列表 */}
                     {(() => {
-                      // 1. 預先計算每個學員的堂數、最後上課日期與欠款狀態
                       let enrichedStudents = students.map(s => {
                         const studentLessons = schedule
                           .filter(l => (l.enrolledStudents || []).some(st => st.name === s.name))
@@ -2185,20 +2181,16 @@
                         return { ...s, count, lastLessonDate, hasUnpaid };
                       });
 
-                      // 2. 搜尋過濾
                       enrichedStudents = enrichedStudents.filter(s => s.name.includes(searchQuery));
 
-                      // 3. 依照下拉選單排序
                       enrichedStudents.sort((a, b) => {
                         if (studentSort === 'name') {
                           return a.name.localeCompare(b.name, 'zh-HK');
                         } else if (studentSort === 'unpaid_first') {
-                          // 欠款的排前面，同狀態則按名稱
                           if (a.hasUnpaid && !b.hasUnpaid) return -1;
                           if (!a.hasUnpaid && b.hasUnpaid) return 1;
                           return a.name.localeCompare(b.name, 'zh-HK');
                         } else if (studentSort === 'last_date_desc') {
-                          // 處理無紀錄的情況
                           if (a.lastLessonDate === '無紀錄' && b.lastLessonDate !== '無紀錄') return 1;
                           if (a.lastLessonDate !== '無紀錄' && b.lastLessonDate === '無紀錄') return -1;
                           if (a.lastLessonDate === '無紀錄' && b.lastLessonDate === '無紀錄') return 0;
@@ -2489,6 +2481,7 @@
             </div>
           )}
 
+          {/* 新增課堂 Modal：已修復日期與時間欄位超出範圍的問題 */}
           {showAddModal && (
             <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000, padding: '16px' }}>
               <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
@@ -2582,22 +2575,24 @@
                     />
                   )}
 
+                  {/* 日期欄位：加入 width: '100%' 與 box-sizing 嚴格限制防溢出 */}
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
                     <input type="date" value={lessonForm.date} onChange={e => {
                       setLessonForm({...lessonForm, date: e.target.value});
                       selectDate(e.target.value);
-                    }} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
+                    }} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
+                  {/* 開始與結束時間：加入 minWidth: 0 與 width: 100% 確保不超出範圍 */}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                     </div>
                   </div>
 
@@ -2694,17 +2689,17 @@
 
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>日期</label>
-                    <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%', marginTop: '4px' }} />
+                    <input type="date" value={lessonForm.date} onChange={e => setLessonForm({...lessonForm, date: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                   </div>
 
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>開始時間</label>
-                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.startTime} onChange={e => setLessonForm({...lessonForm, startTime: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>結束時間</label>
-                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, marginTop: '4px' }} />
+                      <input type="time" value={lessonForm.endTime} onChange={e => setLessonForm({...lessonForm, endTime: e.target.value})} required style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} />
                     </div>
                   </div>
 
@@ -2900,7 +2895,7 @@
                       value={renewForm.date} 
                       onChange={e => setRenewForm({ ...renewForm, date: e.target.value })} 
                       required 
-                      style={{ ...inputStyle, width: '100%', marginTop: '4px' }} 
+                      style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} 
                     />
                   </div>
 
@@ -2912,7 +2907,7 @@
                         value={renewForm.startTime} 
                         onChange={e => setRenewForm({ ...renewForm, startTime: e.target.value })} 
                         required 
-                        style={{ ...inputStyle, marginTop: '4px' }} 
+                        style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} 
                       />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
@@ -2922,7 +2917,7 @@
                         value={renewForm.endTime} 
                         onChange={e => setRenewForm({ ...renewForm, endTime: e.target.value })} 
                         required 
-                        style={{ ...inputStyle, marginTop: '4px' }} 
+                        style={{ ...inputStyle, width: '100%', maxWidth: '100%', marginTop: '4px' }} 
                       />
                     </div>
                   </div>
