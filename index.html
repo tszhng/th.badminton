@@ -44,6 +44,10 @@
     }
     .month-slide-next { animation: slideFromRight 0.28s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
     .month-slide-prev { animation: slideFromLeft 0.28s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+    
+    .student-detail-enter { animation: slideFromRight 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+    .student-list-enter { animation: slideFromLeft 0.3s cubic-bezier(0.25, 1, 0.5, 1) forwards; }
+
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     html, body { -webkit-tap-highlight-color: transparent; }
@@ -182,8 +186,8 @@
     }
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v4.9.5";
-      const LAST_UPDATED = "2026-10-27 18:00";
+      const APP_VERSION = "v5.0.2";
+      const LAST_UPDATED = "2026-10-29 12:00";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -233,7 +237,6 @@
 
       const [calendarViewMode, setCalendarViewMode] = useState('month');
       
-      // 控制課表頁面是否顯示金額
       const [showScheduleAmount, setShowScheduleAmount] = useState(false);
       
       const [showAmount, setShowAmount] = useState(false);
@@ -245,7 +248,9 @@
       const [revenueStatusFilter, setRevenueStatusFilter] = useState('all');
 
       const [activeStudentDetail, setActiveStudentDetail] = useState(null);
+      const [isEditingDetail, setIsEditingDetail] = useState(false);
       const [studentSort, setStudentSort] = useState('name');
+      const [studentStatusFilter, setStudentStatusFilter] = useState('all');
 
       const [monthSlideDir, setMonthSlideDir] = useState('');
       const touchStartXRef = useRef(0);
@@ -272,6 +277,7 @@
         }
         if (activeTab !== 'students') {
           setActiveStudentDetail(null);
+          setIsEditingDetail(false);
         }
       }, [activeTab]);
 
@@ -445,18 +451,18 @@
 
       const [editingCourseTypeId, setEditingCourseTypeId] = useState(null);
 
-      const [students, setStudents] = useState(() =>
-        loadLS('th_badminton_students', [
+      const [students, setStudents] = useState(() => {
+        const loaded = loadLS('th_badminton_students', [
           { id: 1, name: '張小明', phone: '91234567', level: '近初', notes: '習慣右手，想練高遠球' },
           { id: 2, name: '李阿華', phone: '98765432', level: '初中', notes: '主力練雙打平抽' }
-        ])
-      );
+        ]);
+        return loaded.map(s => ({ isActive: true, ...s }));
+      });
 
       const [searchQuery, setSearchQuery] = useState('');
-      const [studentForm, setStudentForm] = useState({ id: null, name: '', phone: '', level: '新手', notes: '' });
+      const [studentForm, setStudentForm] = useState({ id: null, name: '', phone: '', level: '新手', notes: '', isActive: true });
 
       const [showAddStudentModal, setShowAddStudentModal] = useState(false);
-      const [showEditStudentModal, setShowEditStudentModal] = useState(false);
 
       const [schedule, setSchedule] = useState(() =>
         loadLS('th_badminton_schedule', [
@@ -519,7 +525,7 @@
       });
 
       const anyModalOpen = showAddModal || showEditModal || !!selectedLessonModal ||
-        showRenewModal || showAddStudentModal || showEditStudentModal;
+        showRenewModal || showAddStudentModal;
 
       useEffect(() => {
         document.body.style.overflow = anyModalOpen ? 'hidden' : '';
@@ -530,7 +536,6 @@
         const onKey = (e) => {
           if (e.key !== 'Escape') return;
           if (showAddStudentModal) setShowAddStudentModal(false);
-          else if (showEditStudentModal) setShowEditStudentModal(false);
           else if (showRenewModal) setShowRenewModal(false);
           else if (showEditModal) setShowEditModal(false);
           else if (selectedLessonModal) setSelectedLessonModal(null);
@@ -538,7 +543,7 @@
         };
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
-      }, [showAddStudentModal, showEditStudentModal, showRenewModal, showEditModal, selectedLessonModal, showAddModal]);
+      }, [showAddStudentModal, showRenewModal, showEditModal, selectedLessonModal, showAddModal]);
 
       const handleAddCourtPayer = () => {
         const trimmed = newPayerInput.trim();
@@ -592,15 +597,6 @@
           court: ''
         });
         setShowAddModal(true);
-      };
-
-      const checkStudentHasUnpaid = (studentName) => {
-        const pastLessons = schedule.filter(l => (l.date || '') <= todayStr);
-        for (let l of pastLessons) {
-          const st = (l.enrolledStudents || []).find(s => s.name === studentName);
-          if (st && !st.isPaid) return true;
-        }
-        return false;
       };
 
       const getStudentCompletedLessonCount = (studentName) => {
@@ -955,7 +951,7 @@
           targetName = addStudentCustom.trim();
           if (!targetName) { alert('請輸入新學員姓名！'); return; }
           if (!students.some(s => s.name === targetName)) {
-            setStudents(prev => [...prev, { id: Date.now(), name: targetName, phone: '', level: '新手', notes: '透過課堂快速新增' }]);
+            setStudents(prev => [...prev, { id: Date.now(), name: targetName, phone: '', level: '新手', notes: '透過課堂快速新增', isActive: true }]);
           }
         }
 
@@ -1099,31 +1095,30 @@
       const handleSaveStudent = (e) => {
         e.preventDefault();
         if (!studentForm.name) return;
+        setStudents([...students, { ...studentForm, id: Date.now() }]);
+        setShowAddStudentModal(false);
+        setStudentForm({ id: null, name: '', phone: '', level: '新手', notes: '', isActive: true });
+      };
 
-        if (studentForm.id) {
-          const oldStudent = students.find(s => s.id === studentForm.id);
-          const oldName = oldStudent ? oldStudent.name : null;
+      const handleInlineSaveStudent = (e) => {
+        e.preventDefault();
+        if (!studentForm.name) return;
 
-          setStudents(students.map(s => s.id === studentForm.id ? { ...studentForm } : s));
+        const oldName = activeStudentDetail.name;
 
-          if (oldName && oldName !== studentForm.name) {
-            setSchedule(prev => prev.map(l => ({
-              ...l,
-              enrolledStudents: (l.enrolledStudents || []).map(st =>
-                st.name === oldName ? { ...st, name: studentForm.name } : st
-              )
-            })));
-          }
+        setStudents(students.map(s => s.id === studentForm.id ? { ...studentForm } : s));
 
-          setShowEditStudentModal(false);
-          if (activeStudentDetail && activeStudentDetail.id === studentForm.id) {
-            setActiveStudentDetail({ ...studentForm });
-          }
-        } else {
-          setStudents([...students, { ...studentForm, id: Date.now() }]);
-          setShowAddStudentModal(false);
+        if (oldName !== studentForm.name) {
+          setSchedule(prev => prev.map(l => ({
+            ...l,
+            enrolledStudents: (l.enrolledStudents || []).map(st =>
+              st.name === oldName ? { ...st, name: studentForm.name } : st
+            )
+          })));
         }
-        setStudentForm({ id: null, name: '', phone: '', level: '新手', notes: '' });
+
+        setActiveStudentDetail({ ...studentForm });
+        setIsEditingDetail(false);
       };
 
       const handleDeleteStudent = (studentId, studentName) => {
@@ -1182,7 +1177,10 @@
             if (confirm('確定要還原備份嗎？這將會覆蓋現有資料！')) {
               if (imported.courtPayers) setCourtPayers(imported.courtPayers);
               if (imported.courseTypes) setCourseTypes(imported.courseTypes);
-              if (imported.students) setStudents(imported.students);
+              if (imported.students) {
+                const mappedStudents = imported.students.map(s => ({ isActive: true, ...s }));
+                setStudents(mappedStudents);
+              }
               if (imported.schedule) setSchedule(imported.schedule);
               alert('資料成功還原！');
             }
@@ -1421,7 +1419,6 @@
                 {icons.calendar} {formattedTitle}
               </span>
               
-              {/* 🔧 修改：將提示文字與眼睛按鈕放在一起 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontSize: '12px', color: theme.textSecondary, display: 'flex', alignItems: 'center', gap: '4px' }}>
                   {icons.lightbulb} 點擊卡片加學員 / 管理
@@ -2099,10 +2096,13 @@
             {activeTab === 'students' && (
               <div>
                 {activeStudentDetail ? (
-                  <div className="apple-fade-in">
+                  <div className="student-detail-enter">
                     <div style={{ display: 'flex', alignItems: 'center', marginBottom: '16px', position: 'relative' }}>
                       <button
-                        onClick={() => setActiveStudentDetail(null)}
+                        onClick={() => {
+                          setActiveStudentDetail(null);
+                          setIsEditingDetail(false);
+                        }}
                         style={{ background: 'none', border: 'none', color: '#0071e3', fontSize: '15px', fontWeight: '700', cursor: 'pointer', padding: '8px 0', display: 'flex', alignItems: 'center', zIndex: 2 }}>
                         ❮ 返回
                       </button>
@@ -2111,52 +2111,111 @@
                       </h2>
                     </div>
 
-                    <div style={{ ...cardStyle, marginBottom: '16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div>
-                          <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                            {icons.user} {activeStudentDetail.name}
-                          </h3>
-                          <span style={{ backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px', fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>
-                            {activeStudentDetail.level || '新手'}
-                          </span>
+                    {!isEditingDetail ? (
+                      <div style={{ ...cardStyle, marginBottom: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div>
+                            <h3 style={{ margin: '0 0 6px 0', fontSize: '20px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              {icons.user} {activeStudentDetail.name}
+                              {!activeStudentDetail.isActive && (
+                                <span style={{ fontSize: '12px', backgroundColor: isDarkMode ? '#2c2c2e' : '#f2f2f7', color: isDarkMode ? '#aeaeb2' : '#86868b', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>已停課</span>
+                              )}
+                            </h3>
+                            <span style={{ backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px', fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>
+                              {activeStudentDetail.level || '新手'}
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => openWhatsApp(activeStudentDetail.phone)}
+                            style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
+                            {icons.whatsapp} 聯絡
+                          </button>
                         </div>
-                        <button
-                          onClick={() => openWhatsApp(activeStudentDetail.phone)}
-                          style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 12px', backgroundColor: '#25D366', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer' }}>
-                          {icons.whatsapp} 聯絡
-                        </button>
-                      </div>
 
-                      <div style={{ marginTop: '16px', fontSize: '14px', lineHeight: '1.8' }}>
-                        <div><strong>電話：</strong>{activeStudentDetail.phone || '未提供'}</div>
-                        <div>
-                          <strong>總上課數：</strong>
-                          <span style={{ color: '#34c759', fontWeight: '700', marginLeft: '4px' }}>
-                            {getStudentCompletedLessonCount(activeStudentDetail.name)} 堂
-                          </span>
+                        <div style={{ marginTop: '16px', fontSize: '14px', lineHeight: '1.8' }}>
+                          <div><strong>電話：</strong>{activeStudentDetail.phone || '未提供'}</div>
+                          <div>
+                            <strong>總上課數：</strong>
+                            <span style={{ color: '#34c759', fontWeight: '700', marginLeft: '4px' }}>
+                              {getStudentCompletedLessonCount(activeStudentDetail.name)} 堂
+                            </span>
+                          </div>
+                          <div style={{ marginTop: '8px', backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', color: theme.textSecondary, fontSize: '13px' }}>
+                            <strong>備註：</strong><br />{activeStudentDetail.notes || '無備註'}
+                          </div>
                         </div>
-                        <div style={{ marginTop: '8px', backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', color: theme.textSecondary, fontSize: '13px' }}>
-                          <strong>備註：</strong><br />{activeStudentDetail.notes || '無備註'}
-                        </div>
-                      </div>
 
-                      <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
-                        <button
-                          onClick={() => {
-                            setStudentForm({ ...activeStudentDetail });
-                            setShowEditStudentModal(true);
-                          }}
-                          style={{ flex: 1, padding: '10px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: `1px solid ${theme.border}`, borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                          {icons.edit} 修改資料
-                        </button>
-                        <button
-                          onClick={() => handleDeleteStudent(activeStudentDetail.id, activeStudentDetail.name)}
-                          style={{ flex: 1, padding: '10px', backgroundColor: '#ff3b30', color: '#fff', border: `1px solid #ff3b30`, borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
-                          {icons.trash} 刪除學員
-                        </button>
+                        <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                          <button
+                            onClick={() => {
+                              setStudentForm({ ...activeStudentDetail });
+                              setIsEditingDetail(true);
+                            }}
+                            style={{ flex: 1, padding: '10px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: `1px solid ${theme.border}`, borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                            {icons.edit} 修改資料
+                          </button>
+                          <button
+                            onClick={() => handleDeleteStudent(activeStudentDetail.id, activeStudentDetail.name)}
+                            style={{ flex: 1, padding: '10px', backgroundColor: '#ff3b30', color: '#fff', border: `1px solid #ff3b30`, borderRadius: '12px', fontSize: '13px', fontWeight: '700', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}>
+                            {icons.trash} 刪除學員
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div style={{ ...cardStyle, marginBottom: '16px' }}>
+                        <form onSubmit={handleInlineSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                          <h3 style={{ margin: '0 0 6px 0', fontSize: '18px', fontWeight: '700' }}>修改學員資料</h3>
+                          
+                          <div>
+                            <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>姓名</label>
+                            <input placeholder="學員姓名" value={studentForm.name} onChange={e => setStudentForm({ ...studentForm, name: e.target.value })} required style={{ ...inputStyle, marginTop: '4px' }} />
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>電話</label>
+                              <input placeholder="電話" value={studentForm.phone} onChange={e => setStudentForm({ ...studentForm, phone: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>程度</label>
+                              <select value={studentForm.level} onChange={e => setStudentForm({ ...studentForm, level: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }}>
+                                <option value="新手" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新手</option>
+                                <option value="近初" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>近初</option>
+                                <option value="初級" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>初級</option>
+                                <option value="初中" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>初中</option>
+                                <option value="中級" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>中級</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div>
+                            <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>備註</label>
+                            <textarea placeholder="備註" value={studentForm.notes} onChange={e => setStudentForm({ ...studentForm, notes: e.target.value })} style={{ ...inputStyle, height: '80px', marginTop: '4px' }} />
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', cursor: 'pointer' }} onClick={() => setStudentForm({ ...studentForm, isActive: !studentForm.isActive })}>
+                            <input
+                              type="checkbox"
+                              checked={!studentForm.isActive}
+                              onChange={e => setStudentForm({ ...studentForm, isActive: !e.target.checked })}
+                              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                            />
+                            <label style={{ fontSize: '13px', color: '#86868b', cursor: 'pointer', userSelect: 'none', fontWeight: '600' }}>
+                              標記為「不再上課 / 已停課」
+                            </label>
+                          </div>
+
+                          <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+                            <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#34c759', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
+                              保存修改
+                            </button>
+                            <button type="button" onClick={() => setIsEditingDetail(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
+                              取消
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                    )}
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                       <h3 style={{ fontSize: '16px', fontWeight: '700', margin: 0, color: theme.textPrimary }}>歷史上堂紀錄</h3>
@@ -2220,10 +2279,10 @@
                     </div>
                   </div>
                 ) : (
-                  <div className="apple-fade-in">
+                  <div className="student-list-enter">
                     <button
                       onClick={() => {
-                        setStudentForm({ id: null, name: '', phone: '', level: '新手', notes: '' });
+                        setStudentForm({ id: null, name: '', phone: '', level: '新手', notes: '', isActive: true });
                         setShowAddStudentModal(true);
                       }}
                       style={{ width: '100%', padding: '14px', backgroundColor: '#34c759', color: '#fff', border: 'none', borderRadius: '16px', fontSize: '15px', fontWeight: '700', cursor: 'pointer', marginBottom: '14px', boxShadow: '0 4px 16px rgba(52, 199, 89, 0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
@@ -2240,8 +2299,26 @@
                       />
                     </div>
 
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                      <span style={{ fontSize: '13px', color: theme.textSecondary, fontWeight: '700' }}>排序方式：</span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        {[
+                          { id: 'all', label: '全部' },
+                          { id: 'active', label: '活躍中' },
+                          { id: 'inactive', label: '已停課' }
+                        ].map(f => (
+                          <button
+                            key={f.id}
+                            onClick={() => setStudentStatusFilter(f.id)}
+                            style={{
+                              border: 'none', padding: '6px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '700', cursor: 'pointer',
+                              backgroundColor: studentStatusFilter === f.id ? '#0071e3' : theme.inputBg,
+                              color: studentStatusFilter === f.id ? '#fff' : theme.textSecondary
+                            }}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                      
                       <select
                         value={studentSort}
                         onChange={(e) => setStudentSort(e.target.value)}
@@ -2277,7 +2354,14 @@
                         return { ...s, count, lastLessonDate, hasUnpaid };
                       });
 
-                      enrichedStudents = enrichedStudents.filter(s => s.name.includes(searchQuery));
+                      enrichedStudents = enrichedStudents.filter(s => {
+                        const matchSearch = s.name.includes(searchQuery);
+                        const matchStatus = 
+                          studentStatusFilter === 'all' ? true :
+                          studentStatusFilter === 'active' ? s.isActive :
+                          !s.isActive;
+                        return matchSearch && matchStatus;
+                      });
 
                       enrichedStudents.sort((a, b) => {
                         if (studentSort === 'name') {
@@ -2304,12 +2388,16 @@
                       return enrichedStudents.map(s => (
                         <div
                           key={s.id}
-                          onClick={() => setActiveStudentDetail(s)}
+                          onClick={() => {
+                            setActiveStudentDetail(s);
+                            setIsEditingDetail(false);
+                          }}
                           style={{
                             ...cardStyle,
                             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                             cursor: 'pointer', userSelect: 'none', marginBottom: '12px', padding: '16px',
-                            borderLeft: s.hasUnpaid ? '5px solid #ff9500' : `1px solid ${theme.border}`
+                            opacity: s.isActive ? 1 : 0.6, // 恢復變淡效果
+                            borderLeft: !s.isActive ? '5px solid #8e8e93' : (s.hasUnpaid ? '5px solid #ff9500' : `1px solid ${theme.border}`)
                           }}>
                           <div>
                             <strong style={{ fontSize: '16px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -2325,6 +2413,13 @@
                               <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
                                 最後上課: {s.lastLessonDate}
                               </span>
+                              
+                              {/* 大區分：已停課用灰色，欠款用橘色 */}
+                              {!s.isActive && (
+                                <span style={{ fontSize: '11px', color: isDarkMode ? '#aeaeb2' : '#86868b', backgroundColor: isDarkMode ? '#2c2c2e' : '#f2f2f7', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
+                                  已停課
+                                </span>
+                              )}
                               {s.hasUnpaid && (
                                 <span style={{ fontSize: '11px', color: '#ff9500', backgroundColor: isDarkMode ? '#3b2511' : '#fef3e5', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
                                   有欠款
@@ -2508,65 +2603,23 @@
                     />
                   </div>
 
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', cursor: 'pointer' }} onClick={() => setStudentForm({ ...studentForm, isActive: !studentForm.isActive })}>
+                    <input
+                      type="checkbox"
+                      checked={!studentForm.isActive}
+                      onChange={e => setStudentForm({ ...studentForm, isActive: !e.target.checked })}
+                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
+                    />
+                    <label style={{ fontSize: '13px', color: '#86868b', cursor: 'pointer', userSelect: 'none', fontWeight: '600' }}>
+                      標記為「不再上課 / 已停課」
+                    </label>
+                  </div>
+
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
                     <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
                       確認新增
                     </button>
                     <button type="button" onClick={() => setShowAddStudentModal(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
-                      取消
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {showEditStudentModal && (
-            <div role="dialog" aria-modal="true" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(5px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2300, padding: '16px' }}>
-              <div style={{ backgroundColor: theme.modalBg, color: theme.textPrimary, padding: '24px', borderRadius: '28px', width: '100%', maxWidth: '400px', maxHeight: '90vh', overflowY: 'auto', border: `1px solid ${theme.border}`, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: `1px solid ${theme.border}`, paddingBottom: '10px' }}>
-                  <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '700' }}>修改學員資料</h3>
-                  <button onClick={() => setShowEditStudentModal(false)} style={closeButtonStyle} aria-label="關閉">{icons.close}</button>
-                </div>
-
-                <form onSubmit={handleSaveStudent} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>姓名</label>
-                    <input placeholder="學員姓名" value={studentForm.name} onChange={e => setStudentForm({ ...studentForm, name: e.target.value })} required style={{ ...inputStyle, marginTop: '4px' }} />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>電話</label>
-                      <input placeholder="電話" value={studentForm.phone} onChange={e => setStudentForm({ ...studentForm, phone: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>程度</label>
-                      <select value={studentForm.level} onChange={e => setStudentForm({ ...studentForm, level: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }}>
-                        <option value="新手" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>新手</option>
-                        <option value="近初" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>近初</option>
-                        <option value="初級" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>初級</option>
-                        <option value="初中" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>初中</option>
-                        <option value="中級" style={{ backgroundColor: theme.cardBg, color: theme.textPrimary }}>中級</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>備註</label>
-                    <textarea
-                      placeholder="備註"
-                      value={studentForm.notes}
-                      onChange={e => setStudentForm({ ...studentForm, notes: e.target.value })}
-                      style={{ ...inputStyle, height: '80px', marginTop: '4px' }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
-                    <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
-                      保存修改
-                    </button>
-                    <button type="button" onClick={() => setShowEditStudentModal(false)} style={{ padding: '12px 20px', backgroundColor: '#86868b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' }}>
                       取消
                     </button>
                   </div>
@@ -2836,7 +2889,7 @@
                     <h4 style={{ margin: 0, fontSize: '14px', fontWeight: '700', color: theme.textPrimary }}>
                       學員名單 ({(selectedLessonModal.enrolledStudents || []).length} / {selectedLessonModal.maxCapacity}人)
                     </h4>
-                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 點擊學員列可直接修改</span>
+                    <span style={{ fontSize: '11px', color: theme.textMuted, display: 'flex', alignItems: 'center', gap: '4px' }}>{icons.lightbulb} 點擊學員列直接查看檔案</span>
                   </div>
 
                   {(selectedLessonModal.enrolledStudents || []).length === 0 ? (
@@ -2848,8 +2901,10 @@
                         onClick={() => {
                           const s = students.find(x => x.name === st.name);
                           if (s) {
-                            setStudentForm({ ...s });
-                            setShowEditStudentModal(true);
+                            setSelectedLessonModal(null);
+                            setActiveTab('students');
+                            setActiveStudentDetail(s);
+                            setIsEditingDetail(false);
                           }
                         }}
                         style={{
