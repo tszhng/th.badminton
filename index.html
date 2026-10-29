@@ -2,7 +2,8 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <!-- 🔧 修改 1：加入 maximum-scale 與 user-scalable=no 禁止縮放 -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>TH.badminton</title>
 
   <!-- PWA / iOS meta -->
@@ -50,7 +51,12 @@
 
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-    html, body { -webkit-tap-highlight-color: transparent; }
+    
+    /* 🔧 修改 2：加入 touch-action: manipulation 防止雙擊放大 */
+    html, body { 
+      -webkit-tap-highlight-color: transparent; 
+      touch-action: manipulation;
+    }
   </style>
 </head>
 <body id="app-body" style="margin: 0; background-color: #f5f5f7; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', sans-serif;">
@@ -186,8 +192,8 @@
     }
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v5.0.2";
-      const LAST_UPDATED = "2026-10-29 12:00";
+      const APP_VERSION = "v5.0.3";
+      const LAST_UPDATED = "2026-10-29 14:30";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -1220,7 +1226,7 @@
         backgroundColor: theme.inputBg, 
         color: theme.inputText, 
         boxSizing: 'border-box', 
-        fontSize: '14px', 
+        fontSize: '16px', // 🔧 修改 3：改為 16px 防止 iOS 點擊輸入框時自動放大
         outline: 'none' 
       };
       
