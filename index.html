@@ -2,7 +2,6 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <!-- 🔧 修改 1：加入 maximum-scale 與 user-scalable=no 禁止縮放 -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>TH.badminton</title>
 
@@ -52,7 +51,6 @@
     .no-scrollbar::-webkit-scrollbar { display: none; }
     .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     
-    /* 🔧 修改 2：加入 touch-action: manipulation 防止雙擊放大 */
     html, body { 
       -webkit-tap-highlight-color: transparent; 
       touch-action: manipulation;
@@ -87,6 +85,15 @@
       const h = Math.floor(mins / 60) % 24;
       const m = mins % 60;
       return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+    };
+
+    const getDaysDiff = (laterDateStr, earlierDateStr) => {
+      if (!laterDateStr || !earlierDateStr) return null;
+      const [y1, m1, d1] = laterDateStr.split('-').map(Number);
+      const [y2, m2, d2] = earlierDateStr.split('-').map(Number);
+      const dt1 = new Date(y1, m1 - 1, d1);
+      const dt2 = new Date(y2, m2 - 1, d2);
+      return Math.round((dt1 - dt2) / (1000 * 60 * 60 * 24));
     };
 
     const calculateTotalFee = (item, customStudentCount = null) => {
@@ -192,8 +199,8 @@
     }
 
     function BadmintonCoachApp() {
-      const APP_VERSION = "v5.0.3";
-      const LAST_UPDATED = "2026-10-29 14:30";
+      const APP_VERSION = "v5.0.4";
+      const LAST_UPDATED = "2026-11-25 17:55";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -1226,7 +1233,7 @@
         backgroundColor: theme.inputBg, 
         color: theme.inputText, 
         boxSizing: 'border-box', 
-        fontSize: '16px', // 🔧 修改 3：改為 16px 防止 iOS 點擊輸入框時自動放大
+        fontSize: '16px',
         outline: 'none' 
       };
       
@@ -2306,10 +2313,11 @@
                     </div>
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
-                      <div style={{ display: 'flex', gap: '4px' }}>
+                      <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
                         {[
                           { id: 'all', label: '全部' },
                           { id: 'active', label: '活躍中' },
+                          { id: 'no_schedule', label: '沒排課' },
                           { id: 'inactive', label: '已停課' }
                         ].map(f => (
                           <button
@@ -2317,7 +2325,7 @@
                             onClick={() => setStudentStatusFilter(f.id)}
                             style={{
                               border: 'none', padding: '6px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: '700', cursor: 'pointer',
-                              backgroundColor: studentStatusFilter === f.id ? '#0071e3' : theme.inputBg,
+                              backgroundColor: studentStatusFilter === f.id ? (f.id === 'no_schedule' ? '#ff3b30' : '#0071e3') : theme.inputBg,
                               color: studentStatusFilter === f.id ? '#fff' : theme.textSecondary
                             }}>
                             {f.label}
@@ -2348,16 +2356,19 @@
                           .sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0) || timeToMinutes(b.startTime || b.time) - timeToMinutes(a.startTime || a.time));
 
                         const pastLessons = studentLessons.filter(l => (l.date || '') <= realTodayStr);
+                        const hasUpcomingLesson = studentLessons.some(l => (l.date || '') > realTodayStr);
                         const count = pastLessons.length;
                         const lastLesson = pastLessons.length > 0 ? pastLessons[0] : null;
-                        const lastLessonDate = lastLesson ? (lastLesson.date || '無紀錄') : '無紀錄';
+                        const lastLessonDate = lastLesson ? (lastLesson.date || null) : null;
+                        const daysSinceLast = lastLessonDate ? getDaysDiff(realTodayStr, lastLessonDate) : null;
+                        const isUnscheduled = s.isActive && !hasUpcomingLesson && (daysSinceLast === null || daysSinceLast >= 7);
 
                         let hasUnpaid = false;
                         for (let l of pastLessons) {
                           const stData = (l.enrolledStudents || []).find(x => x.name === s.name);
                           if (stData && !stData.isPaid) { hasUnpaid = true; break; }
                         }
-                        return { ...s, count, lastLessonDate, hasUnpaid };
+                        return { ...s, count, lastLessonDate: lastLessonDate || '無紀錄', daysSinceLast, hasUpcomingLesson, isUnscheduled, hasUnpaid };
                       });
 
                       enrichedStudents = enrichedStudents.filter(s => {
@@ -2365,11 +2376,17 @@
                         const matchStatus = 
                           studentStatusFilter === 'all' ? true :
                           studentStatusFilter === 'active' ? s.isActive :
+                          studentStatusFilter === 'no_schedule' ? s.isUnscheduled :
                           !s.isActive;
                         return matchSearch && matchStatus;
                       });
 
                       enrichedStudents.sort((a, b) => {
+                        // 1. 已停課統一排到最後
+                        if (a.isActive && !b.isActive) return -1;
+                        if (!a.isActive && b.isActive) return 1;
+
+                        // 2. 依使用者選擇的方式排序
                         if (studentSort === 'name') {
                           return a.name.localeCompare(b.name, 'zh-HK');
                         } else if (studentSort === 'unpaid_first') {
@@ -2391,51 +2408,67 @@
                         return <div style={{ textAlign: 'center', padding: '30px', color: theme.textMuted, fontSize: '14px' }}>沒有符合條件的學員</div>;
                       }
 
-                      return enrichedStudents.map(s => (
-                        <div
-                          key={s.id}
-                          onClick={() => {
-                            setActiveStudentDetail(s);
-                            setIsEditingDetail(false);
-                          }}
-                          style={{
-                            ...cardStyle,
-                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                            cursor: 'pointer', userSelect: 'none', marginBottom: '12px', padding: '16px',
-                            opacity: s.isActive ? 1 : 0.6, // 恢復變淡效果
-                            borderLeft: !s.isActive ? '5px solid #8e8e93' : (s.hasUnpaid ? '5px solid #ff9500' : `1px solid ${theme.border}`)
-                          }}>
-                          <div>
-                            <strong style={{ fontSize: '16px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                              {icons.user} {s.name}
-                            </strong>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
-                              <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
-                                {s.level || '新手'}
-                              </span>
-                              <span style={{ fontSize: '11px', color: '#34c759', backgroundColor: isDarkMode ? '#1b3320' : '#eaf8ec', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
-                                已上: {s.count} 堂
-                              </span>
-                              <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
-                                最後上課: {s.lastLessonDate}
-                              </span>
-                              
-                              {/* 大區分：已停課用灰色，欠款用橘色 */}
-                              {!s.isActive && (
-                                <span style={{ fontSize: '11px', color: isDarkMode ? '#aeaeb2' : '#86868b', backgroundColor: isDarkMode ? '#2c2c2e' : '#f2f2f7', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
-                                  已停課
+                      return enrichedStudents.map(s => {
+                        const daysLabel = s.daysSinceLast === null
+                          ? '尚無紀錄'
+                          : s.daysSinceLast === 0
+                            ? '今日上課'
+                            : `距上堂 ${s.daysSinceLast} 天`;
+
+                        return (
+                          <div
+                            key={s.id}
+                            onClick={() => {
+                              setActiveStudentDetail(s);
+                              setIsEditingDetail(false);
+                            }}
+                            style={{
+                              ...cardStyle,
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              cursor: 'pointer', userSelect: 'none', marginBottom: '12px', padding: '16px',
+                              opacity: s.isActive ? 1 : 0.6,
+                              borderLeft: !s.isActive
+                                ? '5px solid #8e8e93'
+                                : (s.hasUnpaid
+                                  ? '5px solid #ff9500'
+                                  : (s.isUnscheduled ? '5px solid #ff3b30' : `1px solid ${theme.border}`))
+                            }}>
+                            <div>
+                              <strong style={{ fontSize: '16px', color: theme.textPrimary, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                {icons.user} {s.name}
+                              </strong>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
+                                <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
+                                  {s.level || '新手'}
                                 </span>
-                              )}
-                              {s.hasUnpaid && (
-                                <span style={{ fontSize: '11px', color: '#ff9500', backgroundColor: isDarkMode ? '#3b2511' : '#fef3e5', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
-                                  有欠款
+                                <span style={{ fontSize: '11px', color: '#34c759', backgroundColor: isDarkMode ? '#1b3320' : '#eaf8ec', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
+                                  已上: {s.count} 堂
                                 </span>
-                              )}
+                                <span style={{ fontSize: '11px', color: theme.textSecondary, backgroundColor: theme.inputBg, padding: '3px 8px', borderRadius: '8px' }}>
+                                  {daysLabel}
+                                </span>
+
+                                {!s.isActive && (
+                                  <span style={{ fontSize: '11px', color: isDarkMode ? '#aeaeb2' : '#86868b', backgroundColor: isDarkMode ? '#2c2c2e' : '#f2f2f7', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
+                                    已停課
+                                  </span>
+                                )}
+                                {s.isUnscheduled && (
+                                  <span style={{ fontSize: '11px', color: '#ff3b30', backgroundColor: isDarkMode ? '#3a1c1c' : '#fff0f0', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
+                                    沒排課
+                                  </span>
+                                )}
+                                {s.hasUnpaid && (
+                                  <span style={{ fontSize: '11px', color: '#ff9500', backgroundColor: isDarkMode ? '#3b2511' : '#fef3e5', padding: '3px 8px', borderRadius: '8px', fontWeight: '700' }}>
+                                    有欠款
+                                  </span>
+                                )}
+                              </div>
                             </div>
+                            <span style={{ fontSize: '16px', color: theme.textMuted, paddingLeft: '8px' }}>❯</span>
                           </div>
-                          <span style={{ fontSize: '16px', color: theme.textMuted, paddingLeft: '8px' }}>❯</span>
-                        </div>
-                      ));
+                        );
+                      });
                     })()}
                   </div>
                 )}
