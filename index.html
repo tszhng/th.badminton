@@ -198,9 +198,52 @@
       }
     }
 
+    /* ---------- iOS 原生風格開關 (Toggle) ---------- */
+    const IOSToggle = ({ checked, onChange, isDarkMode, activeColor = '#34c759' }) => (
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={(e) => {
+          e.stopPropagation();
+          onChange(!checked);
+        }}
+        style={{
+          position: 'relative',
+          width: '48px',
+          height: '28px',
+          borderRadius: '999px',
+          border: 'none',
+          padding: 0,
+          flexShrink: 0,
+          cursor: 'pointer',
+          backgroundColor: checked ? activeColor : (isDarkMode ? '#39393d' : '#d1d1d6'),
+          transition: 'background-color 0.25s cubic-bezier(0.25, 1, 0.5, 1)',
+          WebkitTapHighlightColor: 'transparent',
+          outline: 'none'
+        }}
+      >
+        <span
+          style={{
+            position: 'absolute',
+            top: '2px',
+            left: '2px',
+            width: '24px',
+            height: '24px',
+            borderRadius: '50%',
+            backgroundColor: '#ffffff',
+            boxShadow: '0 2px 6px rgba(0, 0, 0, 0.22), 0 0 1px rgba(0, 0, 0, 0.08)',
+            transform: checked ? 'translateX(20px)' : 'translateX(0px)',
+            transition: 'transform 0.25s cubic-bezier(0.25, 1, 0.5, 1)',
+            pointerEvents: 'none'
+          }}
+        />
+      </button>
+    );
+
     function BadmintonCoachApp() {
-      const APP_VERSION = "v5.0.4";
-      const LAST_UPDATED = "2026-11-25 17:55";
+      const APP_VERSION = "v5.0.7";
+      const LAST_UPDATED = "2026-11-26 14:00";
 
       const getRealTodayString = () => {
         const now = new Date();
@@ -501,6 +544,14 @@
       useEffect(() => { saveLS('th_badminton_students', students); }, [students]);
       useEffect(() => { saveLS('th_badminton_schedule', schedule); }, [schedule]);
 
+      const [autoSyncIOS, setAutoSyncIOS] = useState(() => loadLS('th_badminton_autoSyncIOS', true));
+      const [iosShortcutName, setIosShortcutName] = useState(() => loadLS('th_badminton_iosShortcutName', 'TH排課'));
+      useEffect(() => { saveLS('th_badminton_autoSyncIOS', autoSyncIOS); }, [autoSyncIOS]);
+      useEffect(() => { saveLS('th_badminton_iosShortcutName', iosShortcutName); }, [iosShortcutName]);
+
+      const [syncNewLessonToIOS, setSyncNewLessonToIOS] = useState(true);
+      const [syncEditLessonToIOS, setSyncEditLessonToIOS] = useState(true);
+
       const [showAddModal, setShowAddModal] = useState(false);
       const [showEditModal, setShowEditModal] = useState(false);
       const [selectedLessonModal, setSelectedLessonModal] = useState(null);
@@ -513,7 +564,8 @@
         endTime: '21:00',
         court: '',
         courtPayer: 'TH Coach',
-        keepStudents: true
+        keepStudents: true,
+        syncToIOS: true
       });
 
       const [addStudentSelect, setAddStudentSelect] = useState('');
@@ -609,6 +661,7 @@
           endTime: '21:00',
           court: ''
         });
+        setSyncNewLessonToIOS(autoSyncIOS);
         setShowAddModal(true);
       };
 
@@ -892,10 +945,16 @@
       };
 
       const handleCancelLesson = (lessonId) => {
+        const targetLesson = schedule.find(s => s.id === lessonId);
         if (window.confirm("確定要取消這堂課嗎？所有學員紀錄將會移除。")) {
-          setSchedule(schedule.filter(s => s.id !== lessonId));
+          const nextSchedule = schedule.filter(s => s.id !== lessonId);
+          saveLS('th_badminton_schedule', nextSchedule);
+          setSchedule(nextSchedule);
           if (selectedLessonModal && selectedLessonModal.id === lessonId) {
             setSelectedLessonModal(null);
+          }
+          if (autoSyncIOS && targetLesson) {
+            setTimeout(() => syncToIOSShortcut(targetLesson, false, 'delete'), 150);
           }
         }
       };
@@ -922,23 +981,36 @@
         }
 
         if (lessonForm.id) {
-          setSchedule(schedule.map(item => item.id === lessonForm.id ? {
-            ...item,
-            courseName: lessonForm.courseName,
-            maxCapacity: Number(lessonForm.maxCapacity),
-            feeMode: lessonForm.feeMode,
-            coachFee: Number(lessonForm.coachFee),
-            courtFee: Number(lessonForm.courtFee),
-            courtPayer: finalCourtPayer || '待定',
-            date: lessonForm.date,
-            startTime: lessonForm.startTime,
-            endTime: lessonForm.endTime,
-            court: lessonForm.court
-          } : item));
+          let updatedLesson = null;
+          const nextSchedule = schedule.map(item => {
+            if (item.id === lessonForm.id) {
+              updatedLesson = {
+                ...item,
+                courseName: lessonForm.courseName,
+                maxCapacity: Number(lessonForm.maxCapacity),
+                feeMode: lessonForm.feeMode,
+                coachFee: Number(lessonForm.coachFee),
+                courtFee: Number(lessonForm.courtFee),
+                courtPayer: finalCourtPayer || '待定',
+                date: lessonForm.date,
+                startTime: lessonForm.startTime,
+                endTime: lessonForm.endTime,
+                court: lessonForm.court
+              };
+              return updatedLesson;
+            }
+            return item;
+          });
+          saveLS('th_badminton_schedule', nextSchedule);
+          setSchedule(nextSchedule);
           setShowEditModal(false);
           setSelectedLessonModal(null);
+
+          if (syncEditLessonToIOS && updatedLesson) {
+            setTimeout(() => syncToIOSShortcut(updatedLesson, false, 'save'), 150);
+          }
         } else {
-          setSchedule([...schedule, {
+          const newLesson = {
             id: Date.now(),
             courseName: lessonForm.courseName,
             maxCapacity: Number(lessonForm.maxCapacity),
@@ -951,8 +1023,15 @@
             endTime: lessonForm.endTime,
             court: lessonForm.court || '未定場地',
             enrolledStudents: []
-          }]);
+          };
+          const nextSchedule = [...schedule, newLesson];
+          saveLS('th_badminton_schedule', nextSchedule);
+          setSchedule(nextSchedule);
           setShowAddModal(false);
+
+          if (syncNewLessonToIOS) {
+            setTimeout(() => syncToIOSShortcut(newLesson, false), 150);
+          }
         }
       };
 
@@ -1023,7 +1102,8 @@
           endTime: item.endTime || '21:00',
           court: item.court || '',
           courtPayer: item.courtPayer || 'TH Coach',
-          keepStudents: true
+          keepStudents: true,
+          syncToIOS: autoSyncIOS
         });
         setShowRenewModal(true);
       };
@@ -1055,10 +1135,49 @@
           enrolledStudents: updatedStudents
         };
 
-        setSchedule([...schedule, newLesson]);
+        const nextSchedule = [...schedule, newLesson];
+        saveLS('th_badminton_schedule', nextSchedule);
+        setSchedule(nextSchedule);
         setShowRenewModal(false);
         setSelectedLessonModal(null);
-        alert(`成功續堂！已排定於 ${renewForm.date} (${renewForm.startTime}-${renewForm.endTime})`);
+        if (renewForm.syncToIOS && isIOSDevice()) {
+          setTimeout(() => syncToIOSShortcut(newLesson, false), 150);
+        } else {
+          alert(`成功續堂！已排定於 ${renewForm.date} (${renewForm.startTime}-${renewForm.endTime})`);
+        }
+      };
+
+      const isIOSDevice = () => {
+        return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+          (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      };
+
+      const syncToIOSShortcut = (item, allowFallbackICS = true, action = 'save') => {
+        if (!isIOSDevice()) {
+          if (allowFallbackICS && action !== 'delete') {
+            addToAppleCalendar(item);
+          }
+          return;
+        }
+
+        const studentsList = item.enrolledStudents || [];
+        const studentListStr = studentsList.map(s => s.name).join('、') || '尚無學員';
+        const totalFee = calculateTotalFee(item);
+        const lessonTag = `TH_ID:${item.id || 'TEST'}`;
+
+        const payload = {
+          action,
+          id: lessonTag,
+          title: `🏸 ${item.courseName} (${studentsList.length}/${item.maxCapacity}人)`,
+          start: `${item.date} ${item.startTime || item.time || '00:00'}`,
+          end: `${item.date} ${item.endTime || item.startTime || '00:00'}`,
+          location: item.court || '體育館',
+          notes: `學員：${studentListStr}\n計費模式：${item.feeMode === 'per_person' ? '每人學費' : '整堂學費'}\n課堂費：HK$${item.coachFee}\n場地費：HK$${item.courtFee}\n預計總學費：HK$${totalFee}\n\n${lessonTag}`
+        };
+
+        const shortcutName = encodeURIComponent((iosShortcutName || 'TH排課').trim());
+        const textData = encodeURIComponent(JSON.stringify(payload));
+        window.location.href = `shortcuts://run-shortcut?name=${shortcutName}&input=text&text=${textData}`;
       };
 
       const addToAppleCalendar = (item) => {
@@ -1505,9 +1624,9 @@
 
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '12px' }}>
                       <button
-                        onClick={(e) => { e.stopPropagation(); addToAppleCalendar(item); }}
+                        onClick={(e) => { e.stopPropagation(); syncToIOSShortcut(item, true); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '6px 12px', backgroundColor: '#e0f2fe', color: '#0284c7', border: 'none', borderRadius: '12px', fontSize: '12px', fontWeight: '600', cursor: 'pointer' }}>
-                        {icons.calendarPlus} 匯出
+                        {icons.calendarPlus} 同步日曆
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); handleCancelLesson(item.id); }}
@@ -2206,16 +2325,17 @@
                             <textarea placeholder="備註" value={studentForm.notes} onChange={e => setStudentForm({ ...studentForm, notes: e.target.value })} style={{ ...inputStyle, height: '80px', marginTop: '4px' }} />
                           </div>
 
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', cursor: 'pointer' }} onClick={() => setStudentForm({ ...studentForm, isActive: !studentForm.isActive })}>
-                            <input
-                              type="checkbox"
-                              checked={!studentForm.isActive}
-                              onChange={e => setStudentForm({ ...studentForm, isActive: !e.target.checked })}
-                              style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                            />
-                            <label style={{ fontSize: '13px', color: '#86868b', cursor: 'pointer', userSelect: 'none', fontWeight: '600' }}>
+                          <div
+                            onClick={() => setStudentForm({ ...studentForm, isActive: !studentForm.isActive })}
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                            <span style={{ fontSize: '13px', color: theme.textSecondary, fontWeight: '600' }}>
                               標記為「不再上課 / 已停課」
-                            </label>
+                            </span>
+                            <IOSToggle
+                              checked={!studentForm.isActive}
+                              onChange={(val) => setStudentForm({ ...studentForm, isActive: !val })}
+                              isDarkMode={isDarkMode}
+                            />
                           </div>
 
                           <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
@@ -2579,6 +2699,71 @@
                 </div>
 
                 <div style={cardStyle}>
+                  <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {icons.calendarPlus} iOS 日曆自動同步設定 (捷徑)
+                  </h3>
+                  <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    {icons.lightbulb} 需先在 iPhone「捷徑」建立對應名稱的捷徑
+                  </div>
+
+                  <div
+                    onClick={() => setAutoSyncIOS(!autoSyncIOS)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', marginBottom: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ fontSize: '13px', fontWeight: '600', color: theme.textPrimary }}>新增 / 修改 / 刪除時自動同步日曆</span>
+                    <IOSToggle
+                      checked={autoSyncIOS}
+                      onChange={(val) => setAutoSyncIOS(val)}
+                      isDarkMode={isDarkMode}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: '12px' }}>
+                    <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>iOS 捷徑名稱</label>
+                    <input
+                      value={iosShortcutName}
+                      onChange={e => setIosShortcutName(e.target.value)}
+                      placeholder="TH排課"
+                      style={{ ...inputStyle, marginTop: '4px' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => {
+                        syncToIOSShortcut({
+                          id: 'TEST_SYNC',
+                          courseName: '測試同步課堂',
+                          maxCapacity: 4,
+                          feeMode: 'per_person',
+                          coachFee: 200,
+                          courtFee: 200,
+                          date: realTodayStr,
+                          startTime: '19:00',
+                          endTime: '20:00',
+                          court: '測試體育館',
+                          enrolledStudents: [{ name: '測試學員', isPaid: false }]
+                        }, true, 'save');
+                      }}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '11px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
+                      {icons.calendarPlus} 測試新增/更新
+                    </button>
+                    <button
+                      onClick={() => {
+                        syncToIOSShortcut({
+                          id: 'TEST_SYNC',
+                          courseName: '測試同步課堂',
+                          date: realTodayStr,
+                          startTime: '19:00',
+                          endTime: '20:00'
+                        }, false, 'delete');
+                      }}
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '11px', backgroundColor: '#ff3b30', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '700', fontSize: '13px', cursor: 'pointer' }}>
+                      {icons.trash} 測試刪除
+                    </button>
+                  </div>
+                </div>
+
+                <div style={cardStyle}>
                   <h3 style={{ margin: '0 0 12px 0', fontSize: '16px', fontWeight: '700' }}>資料備份與還原</h3>
                   <div style={{ fontSize: '12px', color: theme.textSecondary, marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                     {icons.lightbulb} 匯出或匯入 JSON 備份檔案
@@ -2642,16 +2827,17 @@
                     />
                   </div>
 
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', cursor: 'pointer' }} onClick={() => setStudentForm({ ...studentForm, isActive: !studentForm.isActive })}>
-                    <input
-                      type="checkbox"
-                      checked={!studentForm.isActive}
-                      onChange={e => setStudentForm({ ...studentForm, isActive: !e.target.checked })}
-                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                    />
-                    <label style={{ fontSize: '13px', color: '#86868b', cursor: 'pointer', userSelect: 'none', fontWeight: '600' }}>
+                  <div
+                    onClick={() => setStudentForm({ ...studentForm, isActive: !studentForm.isActive })}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ fontSize: '13px', color: theme.textSecondary, fontWeight: '600' }}>
                       標記為「不再上課 / 已停課」
-                    </label>
+                    </span>
+                    <IOSToggle
+                      checked={!studentForm.isActive}
+                      onChange={(val) => setStudentForm({ ...studentForm, isActive: !val })}
+                      isDarkMode={isDarkMode}
+                    />
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
@@ -2784,6 +2970,19 @@
                     <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({ ...lessonForm, court: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} />
                   </div>
 
+                  <div
+                    onClick={() => setSyncNewLessonToIOS(!syncNewLessonToIOS)}
+                    style={{ backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: 'pointer', userSelect: 'none', marginTop: '4px' }}>
+                    <span style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: '600' }}>
+                      同時同步至 iOS 日曆 (透過捷徑)
+                    </span>
+                    <IOSToggle
+                      checked={syncNewLessonToIOS}
+                      onChange={(val) => setSyncNewLessonToIOS(val)}
+                      isDarkMode={isDarkMode}
+                    />
+                  </div>
+
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
                     <button type="submit" style={{ flex: 1, padding: '12px', backgroundColor: '#34c759', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: '700', fontSize: '14px', cursor: 'pointer' }}>
                       確認新增
@@ -2889,6 +3088,19 @@
                   <div>
                     <label style={{ fontSize: '12px', color: theme.textSecondary, fontWeight: '600' }}>球場地點</label>
                     <input placeholder="球場地點" value={lessonForm.court} onChange={e => setLessonForm({ ...lessonForm, court: e.target.value })} style={{ ...inputStyle, marginTop: '4px' }} />
+                  </div>
+
+                  <div
+                    onClick={() => setSyncEditLessonToIOS(!syncEditLessonToIOS)}
+                    style={{ backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: 'pointer', userSelect: 'none', marginTop: '4px' }}>
+                    <span style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: '600' }}>
+                      同時更新 iOS 日曆 (透過捷徑)
+                    </span>
+                    <IOSToggle
+                      checked={syncEditLessonToIOS}
+                      onChange={(val) => setSyncEditLessonToIOS(val)}
+                      isDarkMode={isDarkMode}
+                    />
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
@@ -3031,6 +3243,11 @@
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   <button
+                    onClick={() => syncToIOSShortcut(selectedLessonModal, true)}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: '#0071e3', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+                    {icons.calendarPlus} 同步至 iOS 日曆
+                  </button>
+                  <button
                     onClick={() => handleOpenRenewModal(selectedLessonModal)}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: '#ff9500', color: '#fff', border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
                     {icons.refresh} 續堂 (可選時間)
@@ -3052,6 +3269,7 @@
                         endTime: selectedLessonModal.endTime || '21:00',
                         court: selectedLessonModal.court
                       });
+                      setSyncEditLessonToIOS(autoSyncIOS);
                       setShowEditModal(true);
                     }}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '12px', backgroundColor: theme.inputBg, color: theme.textPrimary, border: 'none', borderRadius: '14px', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
@@ -3127,16 +3345,30 @@
                     </select>
                   </div>
 
-                  <div style={{ backgroundColor: theme.inputBg, padding: '12px', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }} onClick={() => setRenewForm({ ...renewForm, keepStudents: !renewForm.keepStudents })}>
-                    <input
-                      type="checkbox"
-                      checked={renewForm.keepStudents}
-                      onChange={e => setRenewForm({ ...renewForm, keepStudents: e.target.checked })}
-                      style={{ cursor: 'pointer', width: '16px', height: '16px' }}
-                    />
-                    <label style={{ fontSize: '13px', color: theme.textPrimary, cursor: 'pointer', userSelect: 'none', fontWeight: '600' }}>
+                  <div
+                    onClick={() => setRenewForm({ ...renewForm, keepStudents: !renewForm.keepStudents })}
+                    style={{ backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: '600' }}>
                       帶入原學員名單 (付款狀態重置)
-                    </label>
+                    </span>
+                    <IOSToggle
+                      checked={renewForm.keepStudents}
+                      onChange={(val) => setRenewForm({ ...renewForm, keepStudents: val })}
+                      isDarkMode={isDarkMode}
+                    />
+                  </div>
+
+                  <div
+                    onClick={() => setRenewForm({ ...renewForm, syncToIOS: !renewForm.syncToIOS })}
+                    style={{ backgroundColor: theme.inputBg, padding: '10px 12px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', cursor: 'pointer', userSelect: 'none' }}>
+                    <span style={{ fontSize: '13px', color: theme.textPrimary, fontWeight: '600' }}>
+                      同時同步至 iOS 日曆 (透過捷徑)
+                    </span>
+                    <IOSToggle
+                      checked={renewForm.syncToIOS}
+                      onChange={(val) => setRenewForm({ ...renewForm, syncToIOS: val })}
+                      isDarkMode={isDarkMode}
+                    />
                   </div>
 
                   <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
